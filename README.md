@@ -307,7 +307,7 @@ erro_xg = np.abs(df["X_times_G_real"] + 1j*df["X_times_G_img"]
                  - df["Ypred_opt_real"] - 1j*df["Ypred_opt_img"])
 assert erro_xg.mean() < 1.0, "Coluna X*G inconsistente com Y_pred"
 
-print("✅ Todos os checks passaram")
+print("Todos os checks passaram")
 ```
 
 ### Interpretação das métricas
