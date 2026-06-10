@@ -1,0 +1,96 @@
+============================================================
+  RELATORIO DE METRICAS — MODELO NARX DO PA
+============================================================
+
+  Amostras analisadas : 48,384
+  PAPR do sinal       : 3.38 dB
+  Amplitude max (in)  : 1.1716
+  Amplitude max (out) : 27.0734
+
+------------------------------------------------------------
+  METRICA                              VALOR        VEREDITO
+------------------------------------------------------------
+  RMSE (erro absoluto)               0.74771                
+  NMSE (erro normalizado)          -27.82 dB      A MELHORAR
+  EVM (erro relativo)                 4.06 %      A MELHORAR
+  Ganho medio                       27.40 dB                
+  Planicidade ganho (std)           0.223 dB             BOM
+  Planicidade fase (std)             4.763°     A MELHORAR
+------------------------------------------------------------
+
+  REFERENCIA DE QUALIDADE (padroes 3GPP / industria):
+    NMSE  : EXCELENTE < -40 dB | BOM < -30 dB
+    EVM   : EXCELENTE < 1.5%   | BOM < 3.5% (256-QAM)
+    Ganho : EXCELENTE std<0.1dB| BOM std<0.5 dB
+    Fase  : EXCELENTE std<0.5° | BOM std<2.0°
+
+============================================================
+
+============================================================
+  FORMULA DO MODELO NARX (betas atuais)
+============================================================
+
+  [!] AVISO: fórmula exibida com os betas do MODELO SEMENTE.
+      Se este CSV veio do GA (coluna Ypred_opt), os betas reais
+      que o geraram podem diferir. Para a fórmula exata do modelo
+      otimizado, salve os betas do GA e use formula_narx(best_config).
+
+  Estrutura geral:
+    Y(t) = c + A1*Y(t-1) + A2*Y(t-2) + SUM(beta_k * phi_k(X))
+
+  Onde phi(X) tem 18 regressores (real/imag x lags 0,1,2 x graus 1,2,3)
+  e Xr = parte real, Xi = parte imaginaria do sinal de entrada.
+
+  Yr(t) =
+      -0.00053                                  [intercepto]
+      + 2.8678e-06*Yr(t-1) - 3.5027e-06*Yi(t-1)   [A1]
+      - 1.15606e-05*Yr(t-2) - 1.31692e-05*Yi(t-2)   [A2]
+      --- LINEAR (deg=1) ---
+      + 23.4565*Xr(t)
+      - 1.4743*Xi(t)
+      + 0.00061469*Xr(t-1)
+      - 0.00200958*Xi(t-1)
+      - 0.00112831*Xr(t-2)
+      - 0.00330822*Xi(t-2)
+      --- QUADRATICO (deg=2) ---
+      - 0.00130382*Xr(t)^2
+      + 0.00486556*Xr(t-1)^2
+      - 0.00441898*Xr(t-2)^2
+      - 0.00780429*Xi(t)^2
+      + 0.000771575*Xi(t-1)^2
+      - 0.0047246*Xi(t-2)^2
+      --- CUBICO (deg=3) ---
+      - 0.463307*Xr(t)^3
+      - 0.00179762*Xr(t-1)^3
+      + 0.00349939*Xr(t-2)^3
+      + 2.04176*Xi(t)^3
+      + 0.00596279*Xi(t-1)^3
+      + 0.00503781*Xi(t-2)^3
+
+  Yi(t) =
+      +6.3e-05                                  [intercepto]
+      + 4.1053e-06*Yr(t-1) - 4.52185e-05*Yi(t-1)   [A1]
+      + 3.04813e-05*Yr(t-2) - 2.03335e-05*Yi(t-2)   [A2]
+      --- LINEAR (deg=1) ---
+      + 1.47499*Xr(t)
+      + 23.4572*Xi(t)
+      + 0.00399313*Xr(t-1)
+      + 0.00782898*Xi(t-1)
+      - 0.000137073*Xr(t-2)
+      - 0.00166534*Xi(t-2)
+      --- QUADRATICO (deg=2) ---
+      + 0.00192824*Xr(t)^2
+      - 0.00335254*Xr(t-1)^2
+      - 0.00476437*Xr(t-2)^2
+      + 0.00410051*Xi(t)^2
+      - 0.000791944*Xi(t-1)^2
+      - 0.00037591*Xi(t-2)^2
+      --- CUBICO (deg=3) ---
+      - 2.04273*Xr(t)^3
+      - 0.00597924*Xr(t-1)^3
+      - 0.00289985*Xr(t-2)^3
+      - 0.467104*Xi(t)^3
+      - 0.00676741*Xi(t-1)^3
+      + 0.0026973*Xi(t-2)^3
+
+============================================================

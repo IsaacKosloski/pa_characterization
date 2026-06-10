@@ -1,0 +1,54 @@
+===== INTERCEPTOS =====
+intercept.Yreal   -0.000530
+intercept.Yimg     0.000063
+dtype: float64
+
+===== MATRIZ A_1 =====
+Yreal(t-1) -> Yreal(t) = 0.0000028678
+Yimg(t-1) -> Yreal(t) = -0.0000035027
+Yreal(t-1) -> Yimg(t) = 0.0000041053
+Yimg(t-1) -> Yimg(t) = -0.0000452185
+
+===== MATRIZ A_2 =====
+Yreal(t-2) -> Yreal(t) = -0.0000115606
+Yimg(t-2) -> Yreal(t) = -0.0000131692
+Yreal(t-2) -> Yimg(t) = 0.0000304813
+Yimg(t-2) -> Yimg(t) = -0.0000203335
+
+===== VARIÁVEIS EXÓGENAS =====
+beta.Xreal.Yreal = 23.4565211336
+beta.Ximg.Yreal = -1.4743037880
+beta.Xreal_lag1.Yreal = 0.0006146895
+beta.Ximg_lag1.Yreal = -0.0020095820
+beta.Xreal_lag2.Yreal = -0.0011283101
+beta.Ximg_lag2.Yreal = -0.0033082169
+beta.Xreal_deg2.Yreal = -0.0013038188
+beta.Xreal_lag1_deg2.Yreal = 0.0048655646
+beta.Xreal_lag2_deg2.Yreal = -0.0044189839
+beta.Xreal_deg3.Yreal = -0.4633073724
+beta.Xreal_lag1_deg3.Yreal = -0.0017976227
+beta.Xreal_lag2_deg3.Yreal = 0.0034993903
+beta.Ximg_deg2.Yreal = -0.0078042871
+beta.Ximg_lag1_deg2.Yreal = 0.0007715753
+beta.Ximg_lag2_deg2.Yreal = -0.0047246018
+beta.Ximg_deg3.Yreal = 2.0417623072
+beta.Ximg_lag1_deg3.Yreal = 0.0059627874
+beta.Ximg_lag2_deg3.Yreal = 0.0050378128
+beta.Xreal.Yimg = 1.4749853770
+beta.Ximg.Yimg = 23.4571530218
+beta.Xreal_lag1.Yimg = 0.0039931260
+beta.Ximg_lag1.Yimg = 0.0078289845
+beta.Xreal_lag2.Yimg = -0.0001370732
+beta.Ximg_lag2.Yimg = -0.0016653415
+beta.Xreal_deg2.Yimg = 0.0019282380
+beta.Xreal_lag1_deg2.Yimg = -0.0033525384
+beta.Xreal_lag2_deg2.Yimg = -0.0047643685
+beta.Xreal_deg3.Yimg = -2.0427333587
+beta.Xreal_lag1_deg3.Yimg = -0.0059792395
+beta.Xreal_lag2_deg3.Yimg = -0.0028998505
+beta.Ximg_deg2.Yimg = 0.0041005096
+beta.Ximg_lag1_deg2.Yimg = -0.0007919437
+beta.Ximg_lag2_deg2.Yimg = -0.0003759096
+beta.Ximg_deg3.Yimg = -0.4671041951
+beta.Ximg_lag1_deg3.Yimg = -0.0067674106
+beta.Ximg_lag2_deg3.Yimg = 0.0026973011
