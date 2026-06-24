@@ -30,11 +30,6 @@
   FORMULA DO MODELO NARX (betas atuais)
 ============================================================
 
-  [!] AVISO: fórmula exibida com os betas do MODELO SEMENTE.
-      Se este CSV veio do GA (coluna Ypred_opt), os betas reais
-      que o geraram podem diferir. Para a fórmula exata do modelo
-      otimizado, salve os betas do GA e use formula_narx(best_config).
-
   Estrutura geral:
     Y(t) = c + A1*Y(t-1) + A2*Y(t-2) + SUM(beta_k * phi_k(X))
 
