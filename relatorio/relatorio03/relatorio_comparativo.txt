@@ -1,0 +1,111 @@
+========================================================================
+  RELATORIO COMPARATIVO — 3 COMPARACOES
+========================================================================
+
+  Sinais:
+    ORIGINAL  = dados medidos (dadosIniciais) — ground truth (Yreal/Yimg)
+    SEMENTE   = modelo herdado (linhagem VARMAX), ponto de partida do GA
+    OTIMIZADO = modelo NARX apos refinamento dos betas pelo GA
+
+  Amostras analisadas : 48,384
+  PAPR do sinal       : 3.38 dB
+
+  Como ler a tabela: cada coluna E uma das comparacoes pedidas.
+    [2] SEMENTE  vs ORIGINAL  -> coluna SEMENTE   (erro do herdado vs dados reais)
+    [3] OTIMIZADO vs ORIGINAL -> coluna OTIMIZADO (erro do GA vs dados reais)
+    [1] SEMENTE  vs OTIMIZADO -> coluna GANHO     (quanto o GA reduziu o erro)
+
+------------------------------------------------------------------------
+  METRICA                     SEMENTE    OTIMIZADO            GANHO
+------------------------------------------------------------------------
+  RMSE (abs)                  0.75251      0.75251         +0.00 %
+  NMSE (dB)                    -27.76       -27.76        +0.00 dB
+  EVM (%)                        4.09         4.09         +0.00 %
+------------------------------------------------------------------------
+  GANHO > 0  =>  o otimizado esta mais perto do ORIGINAL que a semente.
+
+  Vereditos (padroes 3GPP/industria) para [2] e [3]:
+    NMSE : [2] semente = A MELHORAR  | [3] otimizado = A MELHORAR
+    EVM  : [2] semente = A MELHORAR  | [3] otimizado = A MELHORAR
+
+------------------------------------------------------------------------
+  [1] SEMENTE vs OTIMIZADO — divergencia DIRETA entre os dois modelos
+      (mede o quanto o GA moveu a predicao; NAO envolve o ORIGINAL)
+        RMS |Y_sem - Y_opt|  : 0.002347
+        Nivel de divergencia : -77.88 dB  (relativo a potencia da semente)
+
+------------------------------------------------------------------------
+  Caracteristicas do ORIGINAL (sinal medido; independem do modelo):
+    Ganho medio           : 27.40 dB
+    Planicidade ganho std : 0.223 dB
+    Planicidade fase  std : 4.763 graus
+========================================================================
+
+============================================================
+  FORMULA DO MODELO NARX (betas atuais)
+============================================================
+
+  [!] AVISO: fórmula exibida com os betas do MODELO SEMENTE.
+      Se este CSV veio do GA (coluna Ypred_opt), os betas reais
+      que o geraram podem diferir. Para a fórmula exata do modelo
+      otimizado, salve os betas do GA e use formula_narx(best_config).
+
+  Estrutura geral:
+    Y(t) = c + A1*Y(t-1) + A2*Y(t-2) + SUM(beta_k * phi_k(X))
+
+  Onde phi(X) tem 18 regressores (real/imag x lags 0,1,2 x graus 1,2,3)
+  e Xr = parte real, Xi = parte imaginaria do sinal de entrada.
+
+  Yr(t) =
+      -0.00053                                  [intercepto]
+      + 2.8678e-06*Yr(t-1) - 3.5027e-06*Yi(t-1)   [A1]
+      - 1.15606e-05*Yr(t-2) - 1.31692e-05*Yi(t-2)   [A2]
+      --- LINEAR (deg=1) ---
+      + 23.4565*Xr(t)
+      - 1.4743*Xi(t)
+      + 0.00061469*Xr(t-1)
+      - 0.00200958*Xi(t-1)
+      - 0.00112831*Xr(t-2)
+      - 0.00330822*Xi(t-2)
+      --- QUADRATICO (deg=2) ---
+      - 0.00130382*Xr(t)^2
+      + 0.00486556*Xr(t-1)^2
+      - 0.00441898*Xr(t-2)^2
+      - 0.00780429*Xi(t)^2
+      + 0.000771575*Xi(t-1)^2
+      - 0.0047246*Xi(t-2)^2
+      --- CUBICO (deg=3) ---
+      - 0.463307*Xr(t)^3
+      - 0.00179762*Xr(t-1)^3
+      + 0.00349939*Xr(t-2)^3
+      + 2.04176*Xi(t)^3
+      + 0.00596279*Xi(t-1)^3
+      + 0.00503781*Xi(t-2)^3
+
+  Yi(t) =
+      +6.3e-05                                  [intercepto]
+      + 4.1053e-06*Yr(t-1) - 4.52185e-05*Yi(t-1)   [A1]
+      + 3.04813e-05*Yr(t-2) - 2.03335e-05*Yi(t-2)   [A2]
+      --- LINEAR (deg=1) ---
+      + 1.47499*Xr(t)
+      + 23.4572*Xi(t)
+      + 0.00399313*Xr(t-1)
+      + 0.00782898*Xi(t-1)
+      - 0.000137073*Xr(t-2)
+      - 0.00166534*Xi(t-2)
+      --- QUADRATICO (deg=2) ---
+      + 0.00192824*Xr(t)^2
+      - 0.00335254*Xr(t-1)^2
+      - 0.00476437*Xr(t-2)^2
+      + 0.00410051*Xi(t)^2
+      - 0.000791944*Xi(t-1)^2
+      - 0.00037591*Xi(t-2)^2
+      --- CUBICO (deg=3) ---
+      - 2.04273*Xr(t)^3
+      - 0.00597924*Xr(t-1)^3
+      - 0.00289985*Xr(t-2)^3
+      - 0.467104*Xi(t)^3
+      - 0.00676741*Xi(t-1)^3
+      + 0.0026973*Xi(t-2)^3
+
+============================================================
