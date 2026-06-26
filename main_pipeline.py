@@ -1,13 +1,11 @@
 """
-Pipeline principal de Linearização do PA.
+Pipeline principal de Otimização do modelo do PA.
 
 Orquestra:
     1. Carregamento / geração dos dados
     2. Inferência com o modelo semente
     3. Execução do Algoritmo Genético
-    4. Cálculo do ganho linearizado G
-    5. Inserção da coluna "X[n] * G = Y[n]" no DataFrame
-    6. Geração dos gráficos de análise
+    4. Geração dos gráficos de análise
 
 Execute com:
     python main_pipeline.py
@@ -15,7 +13,7 @@ Execute com:
 Dependências:
     pip install deap numpy pandas matplotlib scipy
 """
-
+import re
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -32,19 +30,58 @@ from visualization.plots  import (
     plot_full_dashboard,
 )
 
-# --- Utilitários de Dados
-def generate_data(
+# --- Utilitário de Diretórios
+def create_run_directory(base_dir: str = "./output", prefix: str = "output") -> Path:
+    """
+    Cria um novo subdiretório numerado dentro de `base_dir`.
+
+    Procura subpastas já existentes no formato {prefix}NN (ex.: output01,
+    output02, ...), descobre o maior número usado e cria o próximo da
+    sequência. Assim, cada execução do pipeline gera uma pasta nova e nunca
+    sobrescreve os resultados anteriores.
+
+    Exemplo:
+        Se já existem  output/output01  e  output/output02,
+        a função cria e retorna  output/output03.
+
+    :param base_dir : pasta-mãe que guarda todas as execuções
+    :param prefix   : prefixo do nome de cada subpasta
+    :return         : Path para o subdiretório recém-criado
+    """
+    base = Path(base_dir)
+    base.mkdir(parents=True, exist_ok=True)   # garante que a pasta-mãe existe
+
+    # Regex que casa apenas nomes como "output07" e captura o número (07)
+    pattern = re.compile(rf"^{re.escape(prefix)}(\d+)$")
+
+    existing_nums = []
+    for item in base.iterdir():               # percorre o conteúdo de base/
+        if item.is_dir():                     # só interessam pastas
+            match = pattern.match(item.name)
+            if match:
+                existing_nums.append(int(match.group(1)))
+
+    # Se nenhuma pasta existe ainda, default=0 garante que o próximo seja 1
+    next_num = max(existing_nums, default=0) + 1
+    run_dir = base / f"{prefix}{next_num:02d}"   # :02d = 2 dígitos com zero à esquerda
+    run_dir.mkdir()
+    return run_dir
+
+# --- Utilitário de Dados
+def load_or_generate_data(
     csv_path: str | None = None,
     n_samples: int = 4096,
     seed: int = 42,
 ) -> tuple[np.ndarray, np.ndarray]:
     """
-    Carrega dados de um CSV.
+    Carrega dados de um CSV ou gera dados sintéticos para teste.
 
     Para dados reais, o CSV deve ter as colunas:
         Xreal, Ximg, Yreal, Yimg
 
-    :return
+    Dados sintéticos simulam um sinal OFDM típico passando por um PA com não-linearidade de 3ª ordem.
+
+    :returns
     X : np.ndarray complex (N,) — sinal de entrada
     Y : np.ndarray complex (N,) — sinal de saída medido
     """
@@ -55,11 +92,32 @@ def generate_data(
         Y = (df["Yreal"] + 1j * df["Yimg"]).to_numpy()
         print(f"   {len(X)} amostras carregadas.")
         return X, Y
-    else:
-        raise FileNotFoundError(
-            f"CSV não encontrado: {csv_path}. "
-            f"Verifique se o caminho relativo está correto a partir de onde você executa o script."
-        )
+
+    print(f"Gerando dados sintéticos ({n_samples} amostras)...")
+    rng = np.random.default_rng(seed)
+
+    # Simula envoltória complexa de um sinal OFDM de 64 subportadoras
+    t = np.arange(n_samples)
+    X = np.zeros(n_samples, dtype=complex)
+    for _ in range(64):
+        freq  = rng.uniform(0, 0.5)
+        phase = rng.uniform(0, 2 * np.pi)
+        X += (rng.standard_normal() + 1j * rng.standard_normal()) * \
+             np.exp(1j * (2 * np.pi * freq * t + phase))
+    X /= np.max(np.abs(X))  # Normaliza para amplitude máxima = 1
+
+    # Ganho nominal do PA (≈ 23.45 do modelo)
+    G_nominal = 23.45 + 1.47j
+
+    # Adiciona não-linearidade de Saleh (compressão de ganho)
+    amp = np.abs(X)
+    G_nl = G_nominal / (1 + 0.3 * amp**2)   # AM-AM
+    phi_nl = np.exp(1j * 0.1 * amp**2)       # AM-PM
+
+    Y = G_nl * phi_nl * X
+    Y += 0.01 * (rng.standard_normal(n_samples) + 1j * rng.standard_normal(n_samples))
+
+    return X, Y
 
 def build_dataset(
     X: np.ndarray,
@@ -107,7 +165,7 @@ def build_dataset(
         "G_magnitude":        np.abs(G_linearized),
         "G_magnitude_dB":     20 * np.log10(np.abs(G_linearized) + 1e-15),
         "G_phase_deg":        np.angle(G_linearized, deg=True),
-        # ── Coluna principal: X[n] * G = Y[n] ────────────────
+        # -- Coluna ganho linearizado: X[n] * G = Y[n]
         # Multiplica cada amostra pelo ganho médio linearizado
         "X_times_G_real":     (X * G_mean).real,
         "X_times_G_img":      (X * G_mean).imag,
@@ -128,32 +186,26 @@ def run_pipeline(
     """
     Executa o pipeline completo de linearização do PA.
 
-    Parâmetros
-    ----------
-    csv_path       : caminho para CSV com dados reais
+    :parameter
+    csv_path       : caminho para CSV com dados reais (None = dados sintéticos)
     n_samples      : amostras para dados sintéticos
     n_generations  : gerações do GA
     population_size: população do GA
     output_dir     : pasta para salvar outputs
     show_plots     : exibe os gráficos ao final
 
-    Retorna
-    -------
+    :return
     df : pd.DataFrame com todas as colunas incluindo X[n]*G=Y[n]
     """
-    out = Path(output_dir)
-    out.mkdir(parents=True, exist_ok=True)
 
-    print("=" * 60)
-    print("  PA LINEARIZATION PIPELINE")
-    print("=" * 60)
+    out = create_run_directory(output_dir)
+    print(f"Resultados desta execução em: {out}")
 
-    # ── 1. Dados ──────────────────────────────────────────────
-    X, Y_true = generate_data(csv_path, n_samples)
+    # 1 - Dados
+    X, Y_true = load_or_generate_data(csv_path, n_samples)
 
-    # ── 2. Modelo semente ──────────────────────────────────────
-    print("\nAvaliando modelo semente...")
-    seed_config = NARXModelConfig()   # carrega os coeficientes do model_config.py
+    # 2 - Modelo semente
+    seed_config = NARXModelConfig()  # carrega os coeficientes do model_config.py
     seed_engine = NARXEngine(seed_config)
     Y_pred_seed = seed_engine.predict(X)
 
@@ -163,34 +215,32 @@ def run_pipeline(
     print(f"   NMSE semente : {nmse_seed:.2f} dB")
     print(f"   Ganho linear : {seed_config.gain_linear_dB:.2f} dB")
 
-    # ── 3. Alwgoritmo Genético ─────────────────────────────────
-    print(f"\nIniciando GA ({population_size} indivíduos, {n_generations} gerações)...")
-
+    # 3 - Algoritmo Genético
     ga_config = GAConfig(
-        population_size    = population_size,
-        n_generations      = n_generations,
-        crossover_prob     = 0.70,
-        mutation_prob      = 0.20,
-        mutation_sigma_rel = 0.05,
-        tournament_size    = 3,
-        n_elites           = 2,
-        random_seed        = 42,
-        init_perturbation  = 0.10,
+        population_size     = population_size,
+        n_generations       = n_generations,
+        crossover_prob      = 0.70,
+        mutation_prob       = 0.20,
+        mutation_sigma_rel  = 0.05,
+        tournament_size     = 3,
+        n_elites            = 2,
+        random_seed         = 42,
+        init_perturbation   = 0.10,
     )
 
     ga = PALinearizationGA(
-        seed_config  = seed_config,
-        X_input      = X,
-        Y_true       = Y_true,
-        ga_config    = ga_config,
+        seed_config = seed_config,
+        X_input     = X,
+        Y_true      = Y_true,
+        ga_config   = ga_config,
     )
 
     best_config, logbook = ga.run()
 
-    # ── 4. Predição com modelo otimizado ──────────────────────
+    # 4 - Predição com modelo otimizado
     print("\nPredizendo com modelo otimizado...")
-    opt_engine  = NARXEngine(best_config)
-    Y_pred_opt  = opt_engine.predict(X)
+    opt_engine = NARXEngine(best_config)
+    Y_pred_opt = opt_engine.predict(X)
 
     rmse_opt = NARXEngine.rmse(Y_true, Y_pred_opt)
     nmse_opt = NARXEngine.nmse(Y_true, Y_pred_opt)
@@ -198,15 +248,15 @@ def run_pipeline(
     print(f"   NMSE otimizado : {nmse_opt:.2f} dB")
     print(f"   Ganho linear   : {best_config.gain_linear_dB:.2f} dB")
 
-    # ── 5. Ganho linearizado G[n] ─────────────────────────────
+    # 5 - Ganho linearizado G[n]
     G_linearized = compute_gain(X, Y_pred_opt)
-    G_mean       = np.nanmean(G_linearized[np.abs(G_linearized) > 0])
-    print(f"\nGanho médio linearizado:")
-    print(f"   |G| = {abs(G_mean):.4f}  ({20*np.log10(abs(G_mean)):.2f} dB)")
+    G_mean = np.nanmean(G_linearized[np.abs(G_linearized) > 0])
+    print(f"\n Ganho médio linearizado:")
+    print(f"   |G| = {abs(G_mean):.4f}  ({20 * np.log10(abs(G_mean)):.2f} dB)")
     print(f"   ∠G  = {np.angle(G_mean, deg=True):.2f}°")
 
-    # ── 6. DataFrame final ────────────────────────────────────
-    print("\nConstruindo DataFrame...")
+    # 6 - DataFrame final
+    print("\n Construindo DataFrame")
     df = build_dataset(X, Y_true, Y_pred_seed, Y_pred_opt, G_linearized)
 
     csv_out = out / "pa_linearization_results.csv"
@@ -215,23 +265,7 @@ def run_pipeline(
     print(f"   Shape: {df.shape}")
     print(f"\n   Colunas: {list(df.columns)}")
 
-    # ── 7. Resumo: X * G = Y ─────────────────────────────────
-    print("\n" + "=" * 60)
-    print("  EQUAÇÃO X[n] * G = Y[n]")
-    print("=" * 60)
-    print(f"  G (complexo) = {G_mean:.4f}")
-    print(f"  |G|          = {abs(G_mean):.4f}  →  {20*np.log10(abs(G_mean)):.2f} dB")
-    print(f"  ∠G           = {np.angle(G_mean, deg=True):.4f}°")
-    print()
-    print(f"  Verificação na amostra 100:")
-    n = 100
-    Y_check = X[n] * G_mean
-    print(f"    X[100]         = {X[n]:.6f}")
-    print(f"    X[100] * G     = {Y_check:.6f}")
-    print(f"    Y_pred_opt[100]= {Y_pred_opt[n]:.6f}")
-    print(f"    Y_true[100]    = {Y_true[n]:.6f}")
-
-    # ── 8. Gráficos ───────────────────────────────────────────
+    # 8 - Gráficos
     print("\nGerando gráficos...")
 
     fig_const = plot_constellation(
@@ -256,13 +290,13 @@ def run_pipeline(
     if show_plots:
         plt.show()
 
-    print("\nPipeline concluído com sucesso!")
+    print("\nPipeline finalizado")
     return df
 
-# --- Entrada Principal
+# Main
 if __name__ == "__main__":
     df = run_pipeline(
-        csv_path        = "../../datasets/dadosIniciais.csv",
+        csv_path        = None,
         n_samples       = 4096,          # usado apenas para dados sintéticos
         n_generations   = 100,
         population_size = 50,
@@ -276,4 +310,3 @@ if __name__ == "__main__":
               "Ypred_opt_real", "Ypred_opt_img",
               "G_magnitude_dB", "G_phase_deg",
               "X_times_G_real", "X_times_G_img"]].head())
-

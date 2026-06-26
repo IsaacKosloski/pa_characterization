@@ -21,6 +21,7 @@ Uso:
 ============================================================
 """
 
+import re
 import sys
 from pathlib import Path
 import numpy as np
@@ -28,6 +29,46 @@ import pandas as pd
 import matplotlib
 matplotlib.use("Agg")  # backend sem display (salva em arquivo)
 import matplotlib.pyplot as plt
+
+
+# ─────────────────────────────────────────────────────────────
+#  Utilitário de Diretórios
+# ─────────────────────────────────────────────────────────────
+def create_run_directory(base_dir="./relatorio", prefix="relatorio"):
+    """
+    Cria um novo subdiretório numerado dentro de `base_dir`.
+
+    Procura subpastas já existentes no formato {prefix}NN (ex.: relatorio01,
+    relatorio02, ...), descobre o maior número usado e cria o próximo da
+    sequência. Cada execução gera uma pasta nova e nunca sobrescreve os
+    relatórios anteriores.
+
+    Exemplo:
+        Se já existem  relatorio/relatorio01  e  relatorio/relatorio02,
+        a função cria e retorna  relatorio/relatorio03.
+
+    :param base_dir : pasta-mãe que guarda todas as execuções
+    :param prefix   : prefixo do nome de cada subpasta
+    :return         : Path para o subdiretório recém-criado
+    """
+    base = Path(base_dir)
+    base.mkdir(parents=True, exist_ok=True)   # garante que a pasta-mãe existe
+
+    # Regex que casa apenas nomes como "relatorio07" e captura o número (07)
+    pattern = re.compile(rf"^{re.escape(prefix)}(\d+)$")
+
+    existing_nums = []
+    for item in base.iterdir():               # percorre o conteúdo de base/
+        if item.is_dir():                     # só interessam pastas
+            match = pattern.match(item.name)
+            if match:
+                existing_nums.append(int(match.group(1)))
+
+    # Se nenhuma pasta existe ainda, default=0 garante que o próximo seja 1
+    next_num = max(existing_nums, default=0) + 1
+    run_dir = base / f"{prefix}{next_num:02d}"   # :02d = 2 dígitos com zero à esquerda
+    run_dir.mkdir()
+    return run_dir
 
 
 # ─────────────────────────────────────────────────────────────
@@ -233,36 +274,72 @@ def classificar(metricas):
 # ─────────────────────────────────────────────────────────────
 #  Relatório em texto
 # ─────────────────────────────────────────────────────────────
-def gerar_txt(metricas, classes, destino, formula=""):
-    """Escreve o relatório de métricas num arquivo .txt legível."""
+def gerar_txt(m_seed, m_opt, c_seed, c_opt, m_div, destino, formula=""):
+    """
+    Escreve o relatório COMPARATIVO com as TRÊS comparações pedidas:
+
+      [1] SEMENTE  vs OTIMIZADO  -> quanto o GA mudou/melhorou a predição
+      [2] SEMENTE  vs ORIGINAL   -> erro do modelo herdado contra os dados reais
+      [3] OTIMIZADO vs ORIGINAL  -> erro do modelo do GA contra os dados reais
+
+    Parâmetros
+    ----------
+    m_seed, m_opt : calcular_metricas(X, Y_true, Y_*) — erro de cada modelo vs ORIGINAL
+    c_seed, c_opt : classificar() de cada modelo
+    m_div         : calcular_metricas(X, Y_seed, Y_opt) — divergência entre os modelos
+    """
     L = []
-    L.append("=" * 60)
-    L.append("  RELATORIO DE METRICAS — MODELO NARX DO PA")
-    L.append("=" * 60)
+    L.append("=" * 72)
+    L.append("  RELATORIO COMPARATIVO — 3 COMPARACOES")
+    L.append("=" * 72)
     L.append("")
-    L.append(f"  Amostras analisadas : {metricas['n_amostras']:,}")
-    L.append(f"  PAPR do sinal       : {metricas['papr_dB']:.2f} dB")
-    L.append(f"  Amplitude max (in)  : {metricas['amp_max_in']:.4f}")
-    L.append(f"  Amplitude max (out) : {metricas['amp_max_out']:.4f}")
+    L.append("  Sinais:")
+    L.append("    ORIGINAL  = dados medidos (dadosIniciais) — ground truth (Yreal/Yimg)")
+    L.append("    SEMENTE   = modelo herdado (linhagem VARMAX), ponto de partida do GA")
+    L.append("    OTIMIZADO = modelo NARX apos refinamento dos betas pelo GA")
     L.append("")
-    L.append("-" * 60)
-    L.append(f"  {'METRICA':<28}{'VALOR':>14}{'VEREDITO':>16}")
-    L.append("-" * 60)
-    L.append(f"  {'RMSE (erro absoluto)':<28}{metricas['rmse']:>14.5f}{'':>16}")
-    L.append(f"  {'NMSE (erro normalizado)':<28}{metricas['nmse_dB']:>11.2f} dB{classes['nmse']:>16}")
-    L.append(f"  {'EVM (erro relativo)':<28}{metricas['evm_pct']:>12.2f} %{classes['evm']:>16}")
-    L.append(f"  {'Ganho medio':<28}{metricas['ganho_dB']:>11.2f} dB{'':>16}")
-    L.append(f"  {'Planicidade ganho (std)':<28}{metricas['gain_flatness_std']:>11.3f} dB{classes['gain']:>16}")
-    L.append(f"  {'Planicidade fase (std)':<28}{metricas['phase_flatness_std']:>12.3f}{chr(176)}{classes['phase']:>15}")
-    L.append("-" * 60)
+    L.append(f"  Amostras analisadas : {m_opt['n_amostras']:,}")
+    L.append(f"  PAPR do sinal       : {m_opt['papr_dB']:.2f} dB")
     L.append("")
-    L.append("  REFERENCIA DE QUALIDADE (padroes 3GPP / industria):")
-    L.append("    NMSE  : EXCELENTE < -40 dB | BOM < -30 dB")
-    L.append("    EVM   : EXCELENTE < 1.5%   | BOM < 3.5% (256-QAM)")
-    L.append("    Ganho : EXCELENTE std<0.1dB| BOM std<0.5 dB")
-    L.append("    Fase  : EXCELENTE std<0.5° | BOM std<2.0°")
+    L.append("  Como ler a tabela: cada coluna E uma das comparacoes pedidas.")
+    L.append("    [2] SEMENTE  vs ORIGINAL  -> coluna SEMENTE   (erro do herdado vs dados reais)")
+    L.append("    [3] OTIMIZADO vs ORIGINAL -> coluna OTIMIZADO (erro do GA vs dados reais)")
+    L.append("    [1] SEMENTE  vs OTIMIZADO -> coluna GANHO     (quanto o GA reduziu o erro)")
     L.append("")
-    L.append("=" * 60)
+    L.append("-" * 72)
+    L.append(f"  {'METRICA':<22}{'SEMENTE':>13}{'OTIMIZADO':>13}{'GANHO':>17}")
+    L.append("-" * 72)
+
+    # RMSE — menor é melhor; ganho relativo em %
+    d_rmse = (m_seed["rmse"] - m_opt["rmse"]) / (abs(m_seed["rmse"]) + 1e-15) * 100
+    L.append(f"  {'RMSE (abs)':<22}{m_seed['rmse']:>13.5f}{m_opt['rmse']:>13.5f}{d_rmse:>+14.2f} %")
+
+    # NMSE — mais negativo é melhor; ganho expresso em dB
+    d_nmse = m_seed["nmse_dB"] - m_opt["nmse_dB"]      # positivo => otimizado melhor
+    L.append(f"  {'NMSE (dB)':<22}{m_seed['nmse_dB']:>13.2f}{m_opt['nmse_dB']:>13.2f}{d_nmse:>+13.2f} dB")
+
+    # EVM — menor é melhor; ganho relativo em %
+    d_evm = (m_seed["evm_pct"] - m_opt["evm_pct"]) / (abs(m_seed["evm_pct"]) + 1e-15) * 100
+    L.append(f"  {'EVM (%)':<22}{m_seed['evm_pct']:>13.2f}{m_opt['evm_pct']:>13.2f}{d_evm:>+14.2f} %")
+    L.append("-" * 72)
+    L.append("  GANHO > 0  =>  o otimizado esta mais perto do ORIGINAL que a semente.")
+    L.append("")
+    L.append("  Vereditos (padroes 3GPP/industria) para [2] e [3]:")
+    L.append(f"    NMSE : [2] semente = {c_seed['nmse']:<11} | [3] otimizado = {c_opt['nmse']}")
+    L.append(f"    EVM  : [2] semente = {c_seed['evm']:<11} | [3] otimizado = {c_opt['evm']}")
+    L.append("")
+    L.append("-" * 72)
+    L.append("  [1] SEMENTE vs OTIMIZADO — divergencia DIRETA entre os dois modelos")
+    L.append("      (mede o quanto o GA moveu a predicao; NAO envolve o ORIGINAL)")
+    L.append(f"        RMS |Y_sem - Y_opt|  : {m_div['rmse']:.6f}")
+    L.append(f"        Nivel de divergencia : {m_div['nmse_dB']:.2f} dB  (relativo a potencia da semente)")
+    L.append("")
+    L.append("-" * 72)
+    L.append("  Caracteristicas do ORIGINAL (sinal medido; independem do modelo):")
+    L.append(f"    Ganho medio           : {m_opt['ganho_dB']:.2f} dB")
+    L.append(f"    Planicidade ganho std : {m_opt['gain_flatness_std']:.3f} dB")
+    L.append(f"    Planicidade fase  std : {m_opt['phase_flatness_std']:.3f} graus")
+    L.append("=" * 72)
 
     if formula:
         L.append("")
@@ -277,63 +354,90 @@ def gerar_txt(metricas, classes, destino, formula=""):
 # ─────────────────────────────────────────────────────────────
 #  Painel de gráficos
 # ─────────────────────────────────────────────────────────────
-def gerar_plot(X, Y_true, Y_pred, metricas, destino):
-    """Gera um painel 2x2 com as visualizações mais relevantes."""
+def painel_par(titulo, X, Yref, lab_ref, cor_ref, Ytest, lab_test, cor_test,
+               destino, modo="erro"):
+    """
+    Monta um painel 2x2 comparando DOIS sinais: uma REFERENCIA e um TESTE.
+
+    A mesma função serve para as três comparações — muda só quem entra como
+    referência e como teste:
+
+      [1] Semente vs Otimizado : ref=Semente,  teste=Otimizado, modo="diverg"
+      [2] Semente vs Original  : ref=Original, teste=Semente,   modo="erro"
+      [3] Otimizado vs Original: ref=Original, teste=Otimizado, modo="erro"
+
+    modo="erro"   : as métricas medem o ERRO do teste contra a referência real
+                    (a referência é o ORIGINAL/medido).
+    modo="diverg" : as métricas medem a DIVERGENCIA entre dois modelos
+                    (a referência é a semente, não a verdade) — sem veredito.
+
+    :return: dict de métricas calculado para o par.
+    """
+    # calcular_metricas(X, referencia, teste): erro/divergência de teste vs ref
+    m = calcular_metricas(X, Yref, Ytest)
+
     idx = np.linspace(0, len(X) - 1, min(3000, len(X)), dtype=int)
-    Xs, Yt, Yp = X[idx], Y_true[idx], Y_pred[idx]
+    Xs, Yr, Ye = X[idx], Yref[idx], Ytest[idx]
 
     fig, axes = plt.subplots(2, 2, figsize=(14, 11), facecolor="white")
-    fig.suptitle("Painel de Métricas — Modelo NARX do PA", fontsize=15, fontweight="bold")
+    fig.suptitle(titulo, fontsize=15, fontweight="bold")
 
-    # [1] Constelação: medido vs previsto
+    # [1] Constelação IQ
     ax = axes[0, 0]
-    ax.scatter(Yt.real, Yt.imag, c="#2196F3", s=5, alpha=0.4, label="Medido")
-    ax.scatter(Yp.real, Yp.imag, c="#F44336", s=5, alpha=0.4, label="Previsto")
-    ax.set_title("Constelação IQ — Medido vs Previsto", fontweight="bold")
+    ax.scatter(Yr.real, Yr.imag, c=cor_ref,  s=5, alpha=0.35, label=lab_ref)
+    ax.scatter(Ye.real, Ye.imag, c=cor_test, s=5, alpha=0.35, label=lab_test)
+    ax.set_title("Constelacao IQ", fontweight="bold")
     ax.set_xlabel("I (real)"); ax.set_ylabel("Q (imag)")
     ax.legend(markerscale=3); ax.grid(True, alpha=0.3); ax.set_aspect("equal")
 
-    # [2] AM-AM: ganho vs amplitude de entrada
+    # [2] AM-AM: ganho vs amplitude
     ax = axes[0, 1]
     amp = np.abs(Xs)
-    ax.scatter(amp, np.abs(Yt) / (amp + 1e-12), c="#2196F3", s=4, alpha=0.4, label="Medido")
-    ax.scatter(amp, np.abs(Yp) / (amp + 1e-12), c="#F44336", s=4, alpha=0.4, label="Previsto")
-    ax.set_title(f"AM-AM — Ganho vs Amplitude (std={metricas['gain_flatness_std']:.3f} dB)", fontweight="bold")
+    ax.scatter(amp, np.abs(Yr) / (amp + 1e-12), c=cor_ref,  s=4, alpha=0.35, label=lab_ref)
+    ax.scatter(amp, np.abs(Ye) / (amp + 1e-12), c=cor_test, s=4, alpha=0.35, label=lab_test)
+    ax.set_title("AM-AM — Ganho vs Amplitude", fontweight="bold")
     ax.set_xlabel("|X[n]|"); ax.set_ylabel("Ganho |Y|/|X|")
     ax.legend(markerscale=3); ax.grid(True, alpha=0.3)
 
-    # [3] Erro ponto-a-ponto ao longo do tempo
+    # [3] Diferença ponto-a-ponto ao longo do tempo
     ax = axes[1, 0]
-    erro = np.abs(Y_true - Y_pred)
-    ax.plot(erro[:2000], c="#FF9800", lw=0.7)
-    ax.axhline(erro.mean(), color="#4CAF50", ls="--", lw=1.5, label=f"Erro médio: {erro.mean():.3f}")
-    ax.set_title("Erro absoluto |Y_medido − Y_previsto|", fontweight="bold")
-    ax.set_xlabel("Amostra"); ax.set_ylabel("Erro")
+    dif = np.abs(Yref - Ytest)
+    ax.plot(dif[:2000], c=cor_test, lw=0.7, alpha=0.85)
+    ax.axhline(dif.mean(), color="#333333", ls="--", lw=1.3,
+               label=f"media: {dif.mean():.4f}")
+    rotulo = f"|{lab_ref} - {lab_test}|"
+    ax.set_title(f"Diferenca ponto-a-ponto  {rotulo}", fontweight="bold")
+    ax.set_xlabel("Amostra"); ax.set_ylabel("|diferenca|")
     ax.legend(); ax.grid(True, alpha=0.3)
 
-    # [4] Tabela-resumo de métricas
+    # [4] Tabela de métricas do par
     ax = axes[1, 1]; ax.axis("off")
-    linhas = [
-        ["Amostras",            f"{metricas['n_amostras']:,}"],
-        ["RMSE",                f"{metricas['rmse']:.5f}"],
-        ["NMSE",                f"{metricas['nmse_dB']:.2f} dB"],
-        ["EVM",                 f"{metricas['evm_pct']:.2f} %"],
-        ["Ganho médio",         f"{metricas['ganho_dB']:.2f} dB"],
-        ["Planicidade ganho",   f"{metricas['gain_flatness_std']:.3f} dB"],
-        ["Planicidade fase",    f"{metricas['phase_flatness_std']:.3f}°"],
-        ["PAPR entrada",        f"{metricas['papr_dB']:.2f} dB"],
-    ]
-    tab = ax.table(cellText=linhas, colLabels=["Métrica", "Valor"],
-                   loc="center", cellLoc="left", colWidths=[0.55, 0.4])
-    tab.auto_set_font_size(False); tab.set_fontsize(12); tab.scale(1, 2.2)
+    if modo == "diverg":
+        cap = f"Divergencia (ref. = {lab_ref})"
+        linhas = [
+            ["RMS |dif|",  f"{m['rmse']:.6f}"],
+            ["Nivel (dB)", f"{m['nmse_dB']:.2f}"],
+            ["EVM-equiv",  f"{m['evm_pct']:.2f} %"],
+        ]
+    else:
+        cap = f"Erro de {lab_test} vs {lab_ref}"
+        linhas = [
+            ["RMSE", f"{m['rmse']:.5f}"],
+            ["NMSE", f"{m['nmse_dB']:.2f} dB"],
+            ["EVM",  f"{m['evm_pct']:.2f} %"],
+        ]
+    tab = ax.table(cellText=linhas, colLabels=["Metrica", "Valor"],
+                   loc="center", cellLoc="left", colWidths=[0.5, 0.45])
+    tab.auto_set_font_size(False); tab.set_fontsize(12); tab.scale(1, 2.4)
     for j in range(2):
         tab[(0, j)].set_facecolor("#534AB7")
         tab[(0, j)].set_text_props(color="white", fontweight="bold")
-    ax.set_title("Resumo das Métricas", fontweight="bold", pad=20)
+    ax.set_title(cap, fontweight="bold", pad=20)
 
     plt.tight_layout()
     fig.savefig(destino, dpi=150, bbox_inches="tight")
-    print(f"\nPainel de gráficos salvo em: {destino}")
+    print(f"Painel salvo em: {destino}")
+    return m
 
 
 # ─────────────────────────────────────────────────────────────
@@ -341,26 +445,48 @@ def gerar_plot(X, Y_true, Y_pred, metricas, destino):
 # ─────────────────────────────────────────────────────────────
 def carregar(csv_path):
     """
-    Carrega os sinais. Aceita:
-      - pa_linearization_results.csv (com colunas Ypred_opt_*)
-      - CSV bruto (Xreal, Ximg, Yreal, Yimg)
+    Carrega os sinais para a comparação SEMENTE vs. OTIMIZADO.
+
+    Espera o pa_linearization_results.csv gerado pelo main_pipeline.py, que
+    contém as predições dos dois modelos.
+
+    Retorna
+    -------
+    X        : entrada complexa
+    Y_true   : saída medida (Yreal/Yimg) — ground truth
+    Y_seed   : predição do modelo SEMENTE (herdado). Lida de Ypred_seed_* se
+               existir; caso contrário, recalculada na hora pelo modelo semente.
+    Y_opt    : predição do modelo OTIMIZADO pelo GA (Ypred_opt_*) — obrigatória.
+    cfg_usada: NARXModelConfig se a semente foi recalculada (para a fórmula),
+               senão None.
     """
     df = pd.read_csv(csv_path)
     X = (df["Xreal"] + 1j * df["Ximg"]).to_numpy()
     Y_true = (df["Yreal"] + 1j * df["Yimg"]).to_numpy()
 
-    # Se já tem predição otimizada, usa-a; senão calcula com o modelo semente
     cfg_usada = None
-    if "Ypred_opt_real" in df.columns:
-        Y_pred = (df["Ypred_opt_real"] + 1j * df["Ypred_opt_img"]).to_numpy()
+
+    # Modelo OTIMIZADO (GA) — não dá para recalcular sem os betas do GA,
+    # então a coluna precisa existir.
+    if "Ypred_opt_real" not in df.columns:
+        raise ValueError(
+            "CSV sem colunas Ypred_opt_* — gere primeiro o "
+            "pa_linearization_results.csv rodando o main_pipeline.py."
+        )
+    Y_opt = (df["Ypred_opt_real"] + 1j * df["Ypred_opt_img"]).to_numpy()
+
+    # Modelo SEMENTE — usa a coluna se existir; senão recalcula pelo modelo
+    # semente (que é exatamente o NARXModelConfig herdado).
+    if "Ypred_seed_real" in df.columns:
+        Y_seed = (df["Ypred_seed_real"] + 1j * df["Ypred_seed_img"]).to_numpy()
     else:
         sys.path.insert(0, str(Path(__file__).parent))
         from core.model_config import NARXModelConfig
         from core.narx_engine import NARXEngine
         cfg_usada = NARXModelConfig()
-        Y_pred = NARXEngine(cfg_usada).predict(X)
+        Y_seed = NARXEngine(cfg_usada).predict(X)
 
-    return X, Y_true, Y_pred, cfg_usada
+    return X, Y_true, Y_seed, Y_opt, cfg_usada
 
 
 # ─────────────────────────────────────────────────────────────
@@ -368,13 +494,35 @@ def carregar(csv_path):
 # ─────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     csv_path = sys.argv[1] if len(sys.argv) > 1 else "pa_linearization_results.csv"
-    out_dir = Path("./relatorio")
-    out_dir.mkdir(exist_ok=True)
+    out_dir = create_run_directory("./relatorio", prefix="relatorio")
+    print(f"Relatório desta execução em: {out_dir}")
 
-    X, Y_true, Y_pred, cfg_usada = carregar(csv_path)
-    metricas = calcular_metricas(X, Y_true, Y_pred)
-    classes = classificar(metricas)
+    X, Y_true, Y_seed, Y_opt, cfg_usada = carregar(csv_path)
+    m_seed = calcular_metricas(X, Y_true, Y_seed)   # erro semente vs ORIGINAL  [2]
+    m_opt  = calcular_metricas(X, Y_true, Y_opt)    # erro otimizado vs ORIGINAL [3]
+    m_div  = calcular_metricas(X, Y_seed, Y_opt)    # divergencia entre modelos  [1]
+    c_seed = classificar(m_seed)
+    c_opt  = classificar(m_opt)
     formula = formula_narx(cfg_usada)
 
-    gerar_txt(metricas, classes, out_dir / "relatorio_metricas.txt", formula)
-    gerar_plot(X, Y_true, Y_pred, metricas, out_dir / "painel_metricas.png")
+    # Cores consistentes em todos os paineis
+    COR_ORIG = "#9E9E9E"   # cinza  — original (medido)
+    COR_SEED = "#FF9800"   # laranja — semente
+    COR_OPT  = "#4CAF50"   # verde  — otimizado
+
+    # Relatorio de texto com as 3 comparacoes
+    gerar_txt(m_seed, m_opt, c_seed, c_opt, m_div,
+              out_dir / "relatorio_comparativo.txt", formula)
+
+    # Um painel por comparacao
+    painel_par("[1] Semente vs Otimizado (o que o GA mudou)", X,
+               Y_seed, "Semente", COR_SEED, Y_opt, "Otimizado", COR_OPT,
+               out_dir / "comp1_semente_vs_otimizado.png", modo="diverg")
+
+    painel_par("[2] Semente vs Original (dados iniciais)", X,
+               Y_true, "Original", COR_ORIG, Y_seed, "Semente", COR_SEED,
+               out_dir / "comp2_semente_vs_original.png", modo="erro")
+
+    painel_par("[3] Otimizado vs Original (dados iniciais)", X,
+               Y_true, "Original", COR_ORIG, Y_opt, "Otimizado", COR_OPT,
+               out_dir / "comp3_otimizado_vs_original.png", modo="erro")

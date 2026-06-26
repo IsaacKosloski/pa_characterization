@@ -1,10 +1,11 @@
 """
-Algoritmo Genético (GA) para otimização dos coeficientes
-Beta do modelo NARX do PA.
+Algoritmo Genético (GA) para otimização dos coeficientes Beta do modelo NARX do PA.
 
-Objetivo: encontrar o vetor de betas que minimiza o RMSE
-entre o sinal predito pelo modelo e o sinal medido Y[n],
-com a perspectiva de descobrir o G ótimo/linearizado.
+Objetivo: encontrar o vetor de betas que minimiza o RMSE entre o sinal predito pelo modelo e o sinal medido Y[n], com a perspectiva de descobrir o G ótimo/linearizado.
+
+Bibliotecas:
+    DEAP  > framework de computação evolutiva
+    NumPy > álgebra linear
 
 Estrutura do GA:
     Representação : vetor real (float64) de tamanho N_betas (36)
@@ -22,25 +23,28 @@ from copy import deepcopy
 from dataclasses import dataclass
 from typing import List, Tuple, Optional, Callable
 
+# DEAP
 from deap import base, creator, tools, algorithms
 
+# Módulos do projeto
 from core.model_config import NARXModelConfig, ExogenousBetas, Intercepts, AutoregressiveMatrix
 from core.narx_engine import NARXEngine
 
-# --- Configuração do GA
+# --- COnfigurações do GA
 @dataclass
 class GAConfig:
     """
-    Hiperparâmetros do Algoritmo Genético. Concentrar aqui facilita experimentação (tuning).
+    Hiperparâmetros do Algoritmo Genético.
+    Concentrado para facilitar experimentação (tuning).
     """
-    population_size:    int   = 50           # Número de indivíduos na população
-    n_generations:      int   = 100          # Máximo de gerações
-    crossover_prob:     float = 0.7     # P(crossover) por par de pais
-    mutation_prob:      float = 0.2     # P(mutação) por indivíduo
-    mutation_sigma_rel: float = 0.05    # Desvio relativo da mutação gaussiana
-    tournament_size:    int   = 3            # k do torneio de seleção
-    n_elites:           int   = 2            # Elitismo: melhores preservados
-    random_seed:        int   = 42           # Reprodutibilidade
+    population_size     : int   = 50           # Número de indivíduos na população
+    n_generations       : int   = 100          # Máximo de gerações
+    crossover_prob      : float = 0.7     # P(crossover) por par de pais
+    mutation_prob       : float = 0.2     # P(mutação) por indivíduo
+    mutation_sigma_rel  : float = 0.05    # Desvio relativo da mutação gaussiana
+    tournament_size     : int   = 3            # k do torneio de seleção
+    n_elites            : int   = 2            # Elitismo: melhores preservados
+    random_seed         : int   = 42           # Reprodutibilidade
     # Perturbação inicial em torno da semente (range relativo)
     init_perturbation:  float = 0.10    # ±10% dos valores originais
 
@@ -48,42 +52,30 @@ class GAConfig:
 class PALinearizationGA:
     """
     GA para linearização de PA via otimização dos betas NARX.
-
-    :parameters
-    seed_config : NARXModelConfig
-        Modelo base (semente). A população inicial é gerada perturbando os betas desse modelo.
-    X_input : np.ndarray complex
-        Sinal de entrada U[n] / X[n] do PA.
-    Y_true : np.ndarray complex
-        Sinal de saída medido Y[n] do PA (ground truth).
-    ga_config : GAConfig
-        Hiperparâmetros do GA.
-    on_generation : Callable, optional
-        Callback chamado a cada geração com (gen, logbook). Útil para logging externo ou early-stopping.
     """
 
     def __init__(
             self,
-            seed_config: NARXModelConfig,
-            X_input: np.ndarray,
-            Y_true: np.ndarray,
-            ga_config: GAConfig = GAConfig(),
-            on_generation: Optional[Callable] = None,
+            seed_config   : NARXModelConfig,
+            X_input       : np.ndarray,
+            Y_true        : np.ndarray,
+            ga_config     : GAConfig = GAConfig(),
+            on_generation : Optional[Callable] = None,
     ):
-        self.seed_config = seed_config
-        self.X_input = X_input
-        self.Y_true = Y_true
-        self.ga_config = ga_config
+        self.seed_config   = seed_config
+        self.X_input       = X_input
+        self.Y_true        = Y_true
+        self.ga_config     = ga_config
         self.on_generation = on_generation
 
         # Vetor semente dos betas (cromossomo base)
         self._seed_array = seed_config.betas.to_array()
-        self._n_genes = len(self._seed_array)  # = 36 betas
+        self._n_genes    = len(self._seed_array)  # deve ser igual a 36 (betas)
 
         # Configura DEAP (evita redeclarar em chamadas repetidas)
         self._setup_deap()
 
-    # --- Setup do DEAP
+    # Setup do DEAP
     def _setup_deap(self):
         """
         Registra tipos e operadores no toolbox do DEAP.
@@ -93,11 +85,12 @@ class PALinearizationGA:
             - Individual: lista de floats com atributo .fitness
         """
         # Limpa registros anteriores (evita conflito em re-execuções)
-        for name in ["FitnessMin", "Individual"]:
+        for name in ['FitnessMin', 'Individual']:
             if hasattr(creator, name):
                 delattr(creator, name)
-        # -- Tipos
-        # weights=(-1.0,) → minimização (RMSE)
+
+        # --- Tipos
+        # weights=(-1.0,) -> minimização (RMSE)
         creator.create("FitnessMin", base.Fitness, weights=(-1.0,))
         creator.create("Individual", list, fitness=creator.FitnessMin)
 
@@ -118,14 +111,16 @@ class PALinearizationGA:
             return creator.Individual(genes)
 
         self.toolbox.register("individual", _init_individual)
-        self.toolbox.register("population", tools.initRepeat,list, self.toolbox.individual)
+        self.toolbox.register("population", tools.initRepeat,
+                              list, self.toolbox.individual)
 
-        # -- Operadores Genéticos
+        # --- Operadores Genéticos
         # Avaliação
         self.toolbox.register("evaluate", self._fitness_function)
 
         # Seleção por torneio (pressão seletiva moderada)
-        self.toolbox.register("select", tools.selTournament, tournsize=cfg.tournament_size)
+        self.toolbox.register("select", tools.selTournament,
+                              tournsize=cfg.tournament_size)
 
         # Blend crossover: offspring entre e além dos pais (alpha=0.3)
         # Preserva boas regiões, mas permite exploração
@@ -133,17 +128,12 @@ class PALinearizationGA:
 
         # Mutação gaussiana adaptativa: sigma proporcional à magnitude
         # betas grandes podem variar mais; betas pequenos, menos
-        self.toolbox.register("mutate", self._adaptive_mutate)
+        self.toolbox.register("mutate", self._adaptative_mutate)
 
     # --- Função de Aptidão
     def _fitness_function(self, individual: list) -> Tuple[float]:
         """
-        Avalia a aptidão de um indivíduo.
-
-        1. Reconstrói ExogenousBetas a partir do cromossomo.
-        2. Cria uma cópia do NARXModelConfig com os novos betas.
-        3. Executa a predição com NARXEngine.
-        4. Calcula e retorna o RMSE.
+        Avalia a aptidão de um indivíduo (baseado no RMSE).
 
         O DEAP exige que a função retorne uma TUPLA.
         """
@@ -161,7 +151,9 @@ class PALinearizationGA:
 
             engine = NARXEngine(new_config)
             Y_pred = engine.predict(self.X_input)
-            rmse = NARXEngine.rmse(self.Y_true, Y_pred)
+            rmse   = NARXEngine.rmse(self.Y_true, Y_pred)
+            nmse   = NARXEngine.nmse(self.Y_true, Y_pred)
+            #gain   = NARXEngine.compute_gain(self.X_input, Y_pred)
 
             # Penalidade por NaN/Inf (indivíduo inválido)
             if not np.isfinite(rmse):
@@ -173,14 +165,9 @@ class PALinearizationGA:
             return (1e9,)
 
     # --- Mutação Adaptativa
-    def _adaptive_mutate(self, individual: list) -> Tuple[list]:
+    def _adaptative_mutate(self, individual: list) -> Tuple[list]:
         """
-        Mutação gaussiana onde sigma é proporcional à magnitude
-        de cada gene (beta).
-
-        Vantagem: betas grandes (ex: Xreal_Yreal ≈ 23.45) podem
-        explorar mais; betas minúsculos (ex: lag terms ≈ 0.001)
-        recebem perturbações menores → mais estabilidade.
+        Mutação gaussiana onde sigma é proporcional à magnitude de cada gene (beta).
         """
         cfg = self.ga_config
         for i, gene in enumerate(individual):
@@ -189,13 +176,12 @@ class PALinearizationGA:
                 individual[i] += random.gauss(0, sigma)
         return (individual,)
 
-    # --- Execução Principal do GA
+    # --- Execução do GA
     def run(self) -> Tuple[NARXModelConfig, tools.Logbook]:
         """
         Executa o loop evolutivo completo.
 
-        Retorna
-        -------
+        :return
         best_config : NARXModelConfig
             Configuração do modelo com os betas otimizados.
         logbook : tools.Logbook
@@ -206,15 +192,14 @@ class PALinearizationGA:
         random.seed(cfg.random_seed)
         np.random.seed(cfg.random_seed)
 
-        # ── 1. Gerar população inicial ────────────────────────
+        # 1 - Gerar população inicial
         pop = self.toolbox.population(n=cfg.population_size)
 
-        # Inserir a semente original como o primeiro indivíduo
-        # (garante que o GA começa de um ponto conhecido)
+        # Insere a semente original como o primeiro indivíduo (garantindo que o GA inicie do sistema conhecido)
         seed_individual = creator.Individual(self._seed_array.tolist())
         pop[0] = seed_individual
 
-        # ── 2. Estatísticas ───────────────────────────────────
+        # 2 - Estatísticas
         stats = tools.Statistics(lambda ind: ind.fitness.values[0])
         stats.register("min", np.min)
         stats.register("avg", np.mean)
@@ -227,7 +212,7 @@ class PALinearizationGA:
         # Hall of Fame: preserva o melhor indivíduo de todas as gerações
         hof = tools.HallOfFame(1)
 
-        # ── 3. Avaliação inicial ──────────────────────────────
+        # 3 - Avaliação inicial
         fitnesses = list(map(self.toolbox.evaluate, pop))
         for ind, fit in zip(pop, fitnesses):
             ind.fitness.values = fit
@@ -237,7 +222,7 @@ class PALinearizationGA:
         logbook.record(gen=0, nevals=len(pop), **record)
         print(f"Gen 0 | RMSE min: {record['min']:.6f} | avg: {record['avg']:.6f}")
 
-        # ── 4. Loop evolutivo ─────────────────────────────────
+        # 4 - Loop evolutivo
         for gen in range(1, cfg.n_generations + 1):
 
             # Elitismo: preserva os N melhores sem modificação
@@ -286,7 +271,7 @@ class PALinearizationGA:
             if self.on_generation:
                 self.on_generation(gen, logbook)
 
-        # ── 5. Extrair melhor solução ─────────────────────────
+        # 5 - Extrair melhor solução
         best_array = np.array(hof[0], dtype=float)
         best_betas = ExogenousBetas.from_array(best_array)
         best_config = NARXModelConfig(
@@ -296,7 +281,7 @@ class PALinearizationGA:
             betas=best_betas,
         )
 
-        print(f"\nEvolução concluída")
+        print(f"\n --- Evolução concluída")
         print(f"   RMSE inicial (semente): {self._eval_seed():.6f}")
         print(f"   RMSE final   (melhor):  {hof[0].fitness.values[0]:.6f}")
         print(f"   Ganho linear estimado: {best_config.gain_linear_dB:.2f} dB")
