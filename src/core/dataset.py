@@ -6,6 +6,10 @@ class Dataset:
     def __init__(self, x, y):
         self.x = x
         self.y = y
+        self.x_real = self.x.real
+        self.x_imag = self.x.imag
+        self.y_real = self.y.real
+        self.y_imag = self.y.imag
 
     @classmethod
     def from_csv(cls, csv_path):
@@ -25,15 +29,6 @@ class Dataset:
             Dataset(self.x[i_tr:i_val], self.y[i_tr:i_val]),     # validação = 20% seguintes
             Dataset(self.x[i_val:],     self.y[i_val:]),         # teste     = 20% finais
         )
-
-    def get_components(self,to_tensor=False):
-        """Devolve um dicionário com as componentes (real, complexo) dos siniais complexos"""
-        return {
-            "Xreal": torch.tensor(self.x.real) if to_tensor else self.x.real,
-            "Ximag": torch.tensor(self.x.imag) if to_tensor else self.x.imag,
-            "Yreal": torch.tensor(self.y.real) if to_tensor else self.y.real,
-            "Yimag": torch.tensor(self.y.imag) if to_tensor else self.y.imag
-        }
 
     def __len__(self):
         return len(self.x)
