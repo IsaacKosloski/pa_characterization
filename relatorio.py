@@ -1,203 +1,460 @@
 
-import re, sys, json
+import re
+import sys
+import json
 from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import matplotlib
-matplotlib.use("Agg")
+matplotlib.use("Agg")  # backend sem display: salva em arquivo
 import matplotlib.pyplot as plt
+
 try:
     from scipy.signal import welch
-    _HAS_SCIPY = True
+    TEM_SCIPY = True
 except Exception:
-    _HAS_SCIPY = False
+    TEM_SCIPY = False
 
-_C = {"true": "#455A64", "pred": "#4CAF50", "aic": "#FF9800", "bic": "#9C27B0",
-      "rmse": "#2196F3", "grid": "#E0E0E0"}
 
-# ---------- diretório numerado por rodada ----------
-def create_run_directory(base="relatorios", prefix="relatorio"):
-    base = Path(base); base.mkdir(parents=True, exist_ok=True)
-    pat = re.compile(rf"^{re.escape(prefix)}(\d+)$")
-    nums = [int(m.group(1)) for p in base.iterdir() if p.is_dir() and (m := pat.match(p.name))]
-    d = base / f"{prefix}{max(nums, default=0)+1:02d}"; d.mkdir(); return d
+CORES = {
+    "medido": "#455A64",
+    "predito": "#4CAF50",
+    "aic": "#FF9800",
+    "bic": "#9C27B0",
+    "rmse": "#2196F3",
+    "grade": "#E0E0E0",
+}
 
-# ---------- métricas TELECOM ----------
-def metricas(X, Yt, Yp):
-    err = Yt - Yp
-    mse = np.mean(np.abs(err)**2); pwr = np.mean(np.abs(Yt)**2)
-    amp = np.abs(X) + 1e-12
-    g_true = np.abs(Yt) / amp
-    fase = ((np.angle(Yt, deg=True) - np.angle(X, deg=True) + 180) % 360) - 180
+
+# ---------------------------------------------------------------------------
+#  Diretório numerado por rodada
+# ---------------------------------------------------------------------------
+def criar_diretorio_rodada(base="relatorios", prefixo="relatorio"):
+    """Cria relatorios/relatorioNN com numeração automática (nunca sobrescreve)."""
+    base = Path(base)
+    base.mkdir(parents=True, exist_ok=True)
+
+    padrao = re.compile(rf"^{re.escape(prefixo)}(\d+)$")
+    numeros_existentes = []
+    for item in base.iterdir():
+        if item.is_dir():
+            correspondencia = padrao.match(item.name)
+            if correspondencia:
+                numeros_existentes.append(int(correspondencia.group(1)))
+
+    proximo = max(numeros_existentes, default=0) + 1
+    destino = base / f"{prefixo}{proximo:02d}"
+    destino.mkdir()
+    return destino
+
+
+# ---------------------------------------------------------------------------
+#  Métricas padrão de TELECOM
+# ---------------------------------------------------------------------------
+def calcular_metricas(entrada, saida_medida, saida_predita):
+    """Calcula as métricas de avaliação de um modelo de PA a partir dos sinais."""
+    erro = saida_medida - saida_predita
+    erro_quadratico_medio = np.mean(np.abs(erro) ** 2)
+    potencia_medida = np.mean(np.abs(saida_medida) ** 2)
+
+    amplitude_entrada = np.abs(entrada) + 1e-12
+    ganho_por_amostra = np.abs(saida_medida) / amplitude_entrada
+
+    rotacao_fase = np.angle(saida_medida, deg=True) - np.angle(entrada, deg=True)
+    rotacao_fase = ((rotacao_fase + 180) % 360) - 180  # normaliza para [-180, 180]
+
     return {
-        "n": len(X),
-        "rmse": float(np.sqrt(mse)),
-        "nmse_dB": float(10*np.log10(mse/(pwr+1e-15))),
-        "evm_pct": float(np.sqrt(mse/(pwr+1e-15))*100),
-        "ganho_dB": float(20*np.log10(np.mean(g_true))),
-        "gain_flat_std": float(np.std(20*np.log10(g_true+1e-15))),
-        "phase_flat_std": float(np.std(fase)),
-        "papr_dB": float(10*np.log10(np.max(np.abs(X)**2)/np.mean(np.abs(X)**2))),
+        "n_amostras": len(entrada),
+        "rmse": float(np.sqrt(erro_quadratico_medio)),
+        "nmse_dB": float(10 * np.log10(erro_quadratico_medio / (potencia_medida + 1e-15))),
+        "evm_pct": float(np.sqrt(erro_quadratico_medio / (potencia_medida + 1e-15)) * 100),
+        "ganho_dB": float(20 * np.log10(np.mean(ganho_por_amostra))),
+        "planicidade_ganho": float(np.std(20 * np.log10(ganho_por_amostra + 1e-15))),
+        "planicidade_fase": float(np.std(rotacao_fase)),
+        "papr_dB": float(10 * np.log10(np.max(np.abs(entrada) ** 2) / np.mean(np.abs(entrada) ** 2))),
     }
 
-def classificar(m):
-    def v(x, ot, bo): return "EXCELENTE" if x <= ot else ("BOM" if x <= bo else "A MELHORAR")
-    mag = -m["nmse_dB"]
-    nmse = "EXCELENTE" if mag >= 40 else ("BOM" if mag >= 30 else "A MELHORAR")
-    return {"nmse": nmse, "evm": v(m["evm_pct"], 1.5, 3.5),
-            "gain": v(m["gain_flat_std"], 0.1, 0.5), "phase": v(m["phase_flat_std"], 0.5, 2.0)}
 
-# ---------- seleção (AIC / BIC) ----------
-def _n2ll(rmse, N): return N*np.log(rmse**2)
-def aic(rmse, k, N, ppc=2): return _n2ll(rmse, N) + 2*(ppc*k)
-def bic(rmse, k, N, ppc=2): return _n2ll(rmse, N) + (ppc*k)*np.log(N)
+def classificar(metricas):
+    """Atribui um veredito qualitativo (padrões usuais da indústria)."""
+    def veredito(valor, limite_excelente, limite_bom):
+        if valor <= limite_excelente:
+            return "EXCELENTE"
+        if valor <= limite_bom:
+            return "BOM"
+        return "A MELHORAR"
 
-def pareto(df):
-    d = df.sort_values("n_coef"); best = np.inf; keep = []
-    for _, r in d.iterrows():
-        if r["score"] < best: keep.append(r); best = r["score"]
-    return pd.DataFrame(keep)
+    magnitude_nmse = -metricas["nmse_dB"]
+    if magnitude_nmse >= 40:
+        veredito_nmse = "EXCELENTE"
+    elif magnitude_nmse >= 30:
+        veredito_nmse = "BOM"
+    else:
+        veredito_nmse = "A MELHORAR"
 
-def selecoes(df):
-    df = df.copy()
-    df["aic"] = [aic(r.score, r.n_coef, r.N) for r in df.itertuples()]
-    df["bic"] = [bic(r.score, r.n_coef, r.N) for r in df.itertuples()]
-    return {"RMSE": df.loc[df.score.idxmin()], "AIC": df.loc[df.aic.idxmin()],
-            "BIC": df.loc[df.bic.idxmin()]}, df
+    return {
+        "nmse": veredito_nmse,
+        "evm": veredito(metricas["evm_pct"], 1.5, 3.5),
+        "ganho": veredito(metricas["planicidade_ganho"], 0.1, 0.5),
+        "fase": veredito(metricas["planicidade_fase"], 0.5, 2.0),
+    }
 
-# ---------- equação (termos dominantes) ----------
-def equacao(term_names, cr, ci, top=12):
-    mag = np.sqrt(np.asarray(cr)**2 + np.asarray(ci)**2)
-    ordem = np.argsort(mag)[::-1][:top]
-    linhas = [f"  ({cr[k]:+.4g}{ci[k]:+.4g}j) · {term_names[k]}" for k in ordem]
+
+# ---------------------------------------------------------------------------
+#  Critérios de seleção de modelo (AIC e BIC)
+# ---------------------------------------------------------------------------
+def _menos_duas_log_verossimilhanca(rmse, n_amostras):
+    # Para regressão gaussiana: N * ln(SSE / N), com SSE = rmse^2 * N
+    return n_amostras * np.log(rmse ** 2)
+
+
+def valor_aic(rmse, n_coeficientes, n_amostras, parametros_por_coeficiente=2):
+    numero_parametros = parametros_por_coeficiente * n_coeficientes
+    return _menos_duas_log_verossimilhanca(rmse, n_amostras) + 2 * numero_parametros
+
+
+def valor_bic(rmse, n_coeficientes, n_amostras, parametros_por_coeficiente=2):
+    numero_parametros = parametros_por_coeficiente * n_coeficientes
+    return _menos_duas_log_verossimilhanca(rmse, n_amostras) + numero_parametros * np.log(n_amostras)
+
+
+def fronteira_de_pareto(historico):
+    """Mantém apenas os modelos não-dominados: ao crescer em coeficientes, o RMSE cai."""
+    ordenado = historico.sort_values("n_coef")
+    melhor_rmse_ate_agora = np.inf
+    linhas_mantidas = []
+    for _, linha in ordenado.iterrows():
+        if linha["score"] < melhor_rmse_ate_agora:
+            linhas_mantidas.append(linha)
+            melhor_rmse_ate_agora = linha["score"]
+    return pd.DataFrame(linhas_mantidas)
+
+
+def calcular_selecoes(historico, n_amostras_padrao):
+    """
+    Anexa colunas AIC e BIC ao histórico e devolve as escolhas por cada critério.
+
+    Se o histórico já tiver a coluna 'N' (número de resíduos por combinação),
+    ela é usada; caso contrário, usa-se n_amostras_padrao para todas as linhas.
+    """
+    historico = historico.copy()
+
+    if "N" in historico.columns:
+        amostras_por_linha = historico["N"].to_numpy()
+    else:
+        amostras_por_linha = np.full(len(historico), n_amostras_padrao)
+
+    historico["aic"] = [
+        valor_aic(rmse, n_coef, n)
+        for rmse, n_coef, n in zip(historico["score"], historico["n_coef"], amostras_por_linha)
+    ]
+    historico["bic"] = [
+        valor_bic(rmse, n_coef, n)
+        for rmse, n_coef, n in zip(historico["score"], historico["n_coef"], amostras_por_linha)
+    ]
+
+    escolhas = {
+        "RMSE": historico.loc[historico["score"].idxmin()],
+        "AIC": historico.loc[historico["aic"].idxmin()],
+        "BIC": historico.loc[historico["bic"].idxmin()],
+    }
+    return escolhas, historico
+
+
+# ---------------------------------------------------------------------------
+#  Equação do modelo (termos dominantes)
+# ---------------------------------------------------------------------------
+def montar_equacao(nomes_termos, coeficientes_reais, coeficientes_imag, quantidade=12):
+    """Lista os termos com maior magnitude de coeficiente complexo."""
+    coeficientes_reais = np.asarray(coeficientes_reais)
+    coeficientes_imag = np.asarray(coeficientes_imag)
+
+    if len(nomes_termos) != len(coeficientes_reais):
+        return "(nomes dos termos indisponíveis no report.json)"
+
+    magnitude = np.sqrt(coeficientes_reais ** 2 + coeficientes_imag ** 2)
+    indices_dominantes = np.argsort(magnitude)[::-1][:quantidade]
+
+    linhas = []
+    for indice in indices_dominantes:
+        parte_real = coeficientes_reais[indice]
+        parte_imag = coeficientes_imag[indice]
+        nome = nomes_termos[indice]
+        linhas.append(f"  ({parte_real:+.4g}{parte_imag:+.4g}j) · {nome}")
     return "\n".join(linhas)
 
-# ---------- carga de uma rodada ----------
-def load_run(run_dir):
-    run_dir = Path(run_dir)
-    rep = json.load(open(run_dir/"report.json"))
-    hist = pd.read_csv(run_dir/"gridsearch.csv")
-    sim = pd.read_csv(run_dir/"simulation.csv")
-    npz = np.load(run_dir/"coefficients.npz")
-    X = sim["Xreal"].to_numpy() + 1j*sim["Ximg"].to_numpy()
-    Yt = sim["Yreal"].to_numpy() + 1j*sim["Yimg"].to_numpy()
-    Yp = sim["Ypred_real"].to_numpy() + 1j*sim["Ypred_img"].to_numpy()
-    return dict(dir=run_dir, rep=rep, hist=hist, X=X, Yt=Yt, Yp=Yp,
-                cr=npz["real"], ci=npz["imag"])
 
-# ---------- painéis ----------
-def painel_modelo(d, dest):
-    X, Yt, Yp = d["X"], d["Yt"], d["Yp"]
-    idx = np.linspace(0, len(X)-1, min(3000, len(X)), dtype=int)
-    fig, ax = plt.subplots(2, 2, figsize=(14, 11), facecolor="white")
-    fig.suptitle(f"{d['rep']['model']} — painel de caracterização", fontsize=15, fontweight="bold")
-    # constelação
-    a = ax[0,0]
-    a.scatter(Yt[idx].real, Yt[idx].imag, c=_C["true"], s=5, alpha=.35, label="Medido")
-    a.scatter(Yp[idx].real, Yp[idx].imag, c=_C["pred"], s=5, alpha=.35, label="Predito")
-    a.set_title("Constelação IQ", fontweight="bold"); a.set_xlabel("I"); a.set_ylabel("Q")
-    a.legend(markerscale=3); a.grid(True, alpha=.3); a.set_aspect("equal")
+# ---------------------------------------------------------------------------
+#  Carregamento de uma rodada
+# ---------------------------------------------------------------------------
+def carregar_rodada(diretorio):
+    """Lê todos os artefatos de uma pasta runNN e devolve um dicionário."""
+    diretorio = Path(diretorio)
+
+    relatorio_json = json.load(open(diretorio / "report.json"))
+    historico = pd.read_csv(diretorio / "gridsearch.csv")
+    simulacao = pd.read_csv(diretorio / "simulation.csv")
+    coeficientes = np.load(diretorio / "coefficients.npz")
+
+    entrada = simulacao["Xreal"].to_numpy() + 1j * simulacao["Ximg"].to_numpy()
+    saida_medida = simulacao["Yreal"].to_numpy() + 1j * simulacao["Yimg"].to_numpy()
+    saida_predita = simulacao["Ypred_real"].to_numpy() + 1j * simulacao["Ypred_img"].to_numpy()
+
+    # número de coeficientes: robusto, vem do próprio vetor salvo (não do nome da chave)
+    numero_coeficientes = len(coeficientes["real"])
+
+    return {
+        "diretorio": diretorio,
+        "nome_modelo": relatorio_json.get("model", diretorio.parent.name),
+        "hiperparametros": relatorio_json.get("params", {}),
+        "nomes_termos": relatorio_json.get("term_names", []),
+        "n_coeficientes": numero_coeficientes,
+        "historico": historico,
+        "entrada": entrada,
+        "saida_medida": saida_medida,
+        "saida_predita": saida_predita,
+        "coeficientes_reais": coeficientes["real"],
+        "coeficientes_imag": coeficientes["imag"],
+    }
+
+
+# ---------------------------------------------------------------------------
+#  Painéis de gráficos
+# ---------------------------------------------------------------------------
+def gerar_painel_modelo(rodada, destino):
+    """Painel 2x2: constelação, AM-AM, AM-PM e PSD."""
+    entrada = rodada["entrada"]
+    saida_medida = rodada["saida_medida"]
+    saida_predita = rodada["saida_predita"]
+
+    indices = np.linspace(0, len(entrada) - 1, min(3000, len(entrada)), dtype=int)
+
+    figura, eixos = plt.subplots(2, 2, figsize=(14, 11), facecolor="white")
+    figura.suptitle(f"{rodada['nome_modelo']} — painel de caracterização",
+                    fontsize=15, fontweight="bold")
+
+    # Constelação IQ
+    eixo = eixos[0, 0]
+    eixo.scatter(saida_medida[indices].real, saida_medida[indices].imag,
+                 c=CORES["medido"], s=5, alpha=0.35, label="Medido")
+    eixo.scatter(saida_predita[indices].real, saida_predita[indices].imag,
+                 c=CORES["predito"], s=5, alpha=0.35, label="Predito")
+    eixo.set_title("Constelação IQ", fontweight="bold")
+    eixo.set_xlabel("I (real)")
+    eixo.set_ylabel("Q (imaginário)")
+    eixo.legend(markerscale=3)
+    eixo.grid(True, alpha=0.3)
+    eixo.set_aspect("equal")
+
     # AM-AM
-    a = ax[0,1]; amp = np.abs(X[idx])
-    a.scatter(amp, np.abs(Yt[idx]), c=_C["true"], s=4, alpha=.35, label="Medido")
-    a.scatter(amp, np.abs(Yp[idx]), c=_C["pred"], s=4, alpha=.35, label="Predito")
-    a.set_title("AM-AM", fontweight="bold"); a.set_xlabel("|X[n]|"); a.set_ylabel("|Y[n]|")
-    a.legend(markerscale=3); a.grid(True, alpha=.3)
+    eixo = eixos[0, 1]
+    amplitude_entrada = np.abs(entrada[indices])
+    eixo.scatter(amplitude_entrada, np.abs(saida_medida[indices]),
+                 c=CORES["medido"], s=4, alpha=0.35, label="Medido")
+    eixo.scatter(amplitude_entrada, np.abs(saida_predita[indices]),
+                 c=CORES["predito"], s=4, alpha=0.35, label="Predito")
+    eixo.set_title("AM-AM", fontweight="bold")
+    eixo.set_xlabel("|X[n]|")
+    eixo.set_ylabel("|Y[n]|")
+    eixo.legend(markerscale=3)
+    eixo.grid(True, alpha=0.3)
+
     # AM-PM
-    a = ax[1,0]; eps=1e-12
-    a.scatter(amp, np.angle(Yt[idx]/(X[idx]+eps), deg=True), c=_C["true"], s=4, alpha=.35, label="Medido")
-    a.scatter(amp, np.angle(Yp[idx]/(X[idx]+eps), deg=True), c=_C["pred"], s=4, alpha=.35, label="Predito")
-    a.set_title("AM-PM", fontweight="bold"); a.set_xlabel("|X[n]|"); a.set_ylabel("∠Y-∠X (graus)")
-    a.legend(markerscale=3); a.grid(True, alpha=.3)
-    # PSD (regrowth espectral) — padrão telecom (contexto de ACPR)
-    a = ax[1,1]
-    if _HAS_SCIPY:
-        f1,p1 = welch(Yt, nperseg=1024, return_onesided=False)
-        f2,p2 = welch(Yp, nperseg=1024, return_onesided=False)
-        o1=np.argsort(f1); o2=np.argsort(f2)
-        a.plot(f1[o1], 10*np.log10(p1[o1]+1e-15), c=_C["true"], lw=1, label="Medido")
-        a.plot(f2[o2], 10*np.log10(p2[o2]+1e-15), c=_C["pred"], lw=1, label="Predito")
-        a.set_xlabel("Frequência normalizada")
+    eixo = eixos[1, 0]
+    epsilon = 1e-12
+    fase_medida = np.angle(saida_medida[indices] / (entrada[indices] + epsilon), deg=True)
+    fase_predita = np.angle(saida_predita[indices] / (entrada[indices] + epsilon), deg=True)
+    eixo.scatter(amplitude_entrada, fase_medida, c=CORES["medido"], s=4, alpha=0.35, label="Medido")
+    eixo.scatter(amplitude_entrada, fase_predita, c=CORES["predito"], s=4, alpha=0.35, label="Predito")
+    eixo.set_title("AM-PM", fontweight="bold")
+    eixo.set_xlabel("|X[n]|")
+    eixo.set_ylabel("∠Y - ∠X (graus)")
+    eixo.legend(markerscale=3)
+    eixo.grid(True, alpha=0.3)
+
+    # PSD (espectro de saída - contexto de ACPR / regrowth espectral)
+    eixo = eixos[1, 1]
+    if TEM_SCIPY:
+        frequencia_medida, densidade_medida = welch(saida_medida, nperseg=1024, return_onesided=False)
+        frequencia_predita, densidade_predita = welch(saida_predita, nperseg=1024, return_onesided=False)
+        ordem_medida = np.argsort(frequencia_medida)
+        ordem_predita = np.argsort(frequencia_predita)
+        eixo.plot(frequencia_medida[ordem_medida],
+                  10 * np.log10(densidade_medida[ordem_medida] + 1e-15),
+                  c=CORES["medido"], linewidth=1, label="Medido")
+        eixo.plot(frequencia_predita[ordem_predita],
+                  10 * np.log10(densidade_predita[ordem_predita] + 1e-15),
+                  c=CORES["predito"], linewidth=1, label="Predito")
+        eixo.set_xlabel("Frequência normalizada")
     else:
-        a.plot(20*np.log10(np.abs(np.fft.fftshift(np.fft.fft(Yt)))+1e-9), c=_C["true"], lw=.5, label="Medido")
-        a.plot(20*np.log10(np.abs(np.fft.fftshift(np.fft.fft(Yp)))+1e-9), c=_C["pred"], lw=.5, label="Predito")
-    a.set_title("PSD — espectro de saída", fontweight="bold"); a.set_ylabel("dB")
-    a.legend(); a.grid(True, alpha=.3)
-    plt.tight_layout(); fig.savefig(dest, dpi=150, bbox_inches="tight"); plt.close(fig)
+        espectro_medido = 20 * np.log10(np.abs(np.fft.fftshift(np.fft.fft(saida_medida))) + 1e-9)
+        espectro_predito = 20 * np.log10(np.abs(np.fft.fftshift(np.fft.fft(saida_predita))) + 1e-9)
+        eixo.plot(espectro_medido, c=CORES["medido"], linewidth=0.5, label="Medido")
+        eixo.plot(espectro_predito, c=CORES["predito"], linewidth=0.5, label="Predito")
+    eixo.set_title("PSD — espectro de saída", fontweight="bold")
+    eixo.set_ylabel("dB")
+    eixo.legend()
+    eixo.grid(True, alpha=0.3)
 
-def painel_fronteira(hist, sels, dest, nome):
-    pf = pareto(hist).sort_values("n_coef")
-    _, dfic = selecoes(hist)
-    fig, ax = plt.subplots(1, 2, figsize=(14, 5), facecolor="white")
-    fig.suptitle(f"{nome} — fronteira e seleção", fontsize=14, fontweight="bold")
-    ax[0].plot(pf["n_coef"], pf["score"], "-o", c=_C["rmse"], label="fronteira de Pareto")
-    for nm, cor in [("RMSE",_C["rmse"]),("AIC",_C["aic"]),("BIC",_C["bic"])]:
-        s = sels[nm]; ax[0].scatter([s["n_coef"]],[s["score"]], c=cor, s=140, zorder=5,
-                                    edgecolors="black", label=f"escolha {nm}")
-    ax[0].set_xlabel("nº de coeficientes"); ax[0].set_ylabel("RMSE (val)")
-    ax[0].set_title("RMSE × complexidade"); ax[0].legend(); ax[0].grid(True, alpha=.3)
-    dfic_s = dfic.sort_values("n_coef")
-    ax[1].plot(dfic_s["n_coef"], dfic_s["aic"], ".", c=_C["aic"], alpha=.5, label="AIC")
-    ax[1].plot(dfic_s["n_coef"], dfic_s["bic"], ".", c=_C["bic"], alpha=.5, label="BIC")
-    ax[1].set_xlabel("nº de coeficientes"); ax[1].set_ylabel("critério (menor=melhor)")
-    ax[1].set_title("AIC / BIC × complexidade"); ax[1].legend(); ax[1].grid(True, alpha=.3)
-    plt.tight_layout(); fig.savefig(dest, dpi=150, bbox_inches="tight"); plt.close(fig)
+    plt.tight_layout()
+    figura.savefig(destino, dpi=150, bbox_inches="tight")
+    plt.close(figura)
 
-# ---------- montagem do relatório ----------
-def gerar(root="output", base_rel="relatorios"):
-    root = Path(root)
-    runs = []
-    for mdir in sorted(root.iterdir()):
-        if not mdir.is_dir(): continue
-        rr = sorted([p for p in mdir.glob("run*") if p.is_dir()])
-        if rr: runs.append(rr[-1])                      # última rodada de cada modelo
-    if not runs:
-        print("nenhuma rodada encontrada em", root); return
-    out = create_run_directory(base_rel)
-    L = [f"# Relatório de Caracterização de PA", "",
-         f"*Gerado em {pd.Timestamp.now():%Y-%m-%d %H:%M}*  ·  fonte: `{root}/`", "",
-         "## 1. Comparação entre modelos", "",
-         "| Modelo | nº coef | RMSE | NMSE (dB) | EVM (%) | Ganho (dB) | Veredito EVM |",
-         "|---|---:|---:|---:|---:|---:|---|"]
-    dados = []
-    for rd in runs:
-        d = load_run(rd); m = metricas(d["X"], d["Yt"], d["Yp"]); c = classificar(m)
-        d["m"], d["c"] = m, c; dados.append(d)
-        L.append(f"| {d['rep']['model']} | {d['rep']['n_coef']} | {m['rmse']:.4f} | "
-                 f"{m['nmse_dB']:.2f} | {m['evm_pct']:.3f} | {m['ganho_dB']:.2f} | {c['evm']} |")
-    melhor = min(dados, key=lambda d: d["m"]["rmse"])
-    L += ["", f"**Melhor por RMSE:** {melhor['rep']['model']} "
-          f"(RMSE={melhor['m']['rmse']:.4f}, EVM={melhor['m']['evm_pct']:.3f}%, "
-          f"{melhor['rep']['n_coef']} coeficientes).", ""]
-    # seções por modelo
-    for d in dados:
-        nome = d["rep"]["model"]; m = d["m"]; c = d["c"]
-        painel_modelo(d, out/f"{nome}_painel.png")
-        sels, _ = selecoes(d["hist"])
-        painel_fronteira(d["hist"], sels, out/f"{nome}_fronteira.png", nome)
-        L += [f"## Modelo: {nome}", "",
-              f"- **Hiperparâmetros:** `{d['rep']['params']}`",
-              f"- **Amostras (teste):** {m['n']:,}  ·  **PAPR entrada:** {m['papr_dB']:.2f} dB", "",
-              "### Métricas (padrão TELECOM)", "",
-              "| Métrica | Valor | Veredito |", "|---|---:|---|",
-              f"| RMSE | {m['rmse']:.5f} | — |",
-              f"| NMSE | {m['nmse_dB']:.2f} dB | {c['nmse']} |",
-              f"| EVM | {m['evm_pct']:.3f} % | {c['evm']} |",
-              f"| Ganho médio | {m['ganho_dB']:.2f} dB | — |",
-              f"| Planicidade de ganho (σ) | {m['gain_flat_std']:.3f} dB | {c['gain']} |",
-              f"| Planicidade de fase (σ) | {m['phase_flat_std']:.3f} ° | {c['phase']} |", "",
-              "### Seleção de modelo (histórico do GridSearch)", "",
-              f"O GridSearch avaliou **{len(d['hist'])}** combinações. Escolha por critério:", "",
-              "| Critério | nº coef | RMSE |", "|---|---:|---:|"]
-        for nm in ["RMSE", "AIC", "BIC"]:
-            s = sels[nm]; L.append(f"| {nm} | {int(s['n_coef'])} | {s['score']:.4f} |")
-        L += ["", f"![fronteira]({nome}_fronteira.png)", "",
-              "### Equação do modelo (12 termos dominantes)", "", "```",
-              equacao(d["rep"]["term_names"], d["cr"], d["ci"]), "```", "",
-              f"![painel]({nome}_painel.png)", ""]
-    (out/"relatorio.md").write_text("\n".join(L), encoding="utf-8")
-    print("relatório em:", out)
-    return out
+
+def gerar_painel_fronteira(historico, escolhas, historico_com_criterios, destino, nome_modelo):
+    """Painel 1x2: RMSE x complexidade (com as escolhas) e AIC/BIC x complexidade."""
+    pareto = fronteira_de_pareto(historico).sort_values("n_coef")
+
+    figura, eixos = plt.subplots(1, 2, figsize=(14, 5), facecolor="white")
+    figura.suptitle(f"{nome_modelo} — fronteira e seleção", fontsize=14, fontweight="bold")
+
+    eixos[0].plot(pareto["n_coef"], pareto["score"], "-o",
+                  c=CORES["rmse"], label="fronteira de Pareto")
+    for criterio, cor in [("RMSE", CORES["rmse"]), ("AIC", CORES["aic"]), ("BIC", CORES["bic"])]:
+        escolha = escolhas[criterio]
+        eixos[0].scatter([escolha["n_coef"]], [escolha["score"]],
+                         c=cor, s=140, zorder=5, edgecolors="black", label=f"escolha {criterio}")
+    eixos[0].set_xlabel("número de coeficientes")
+    eixos[0].set_ylabel("RMSE (validação)")
+    eixos[0].set_title("RMSE × complexidade")
+    eixos[0].legend()
+    eixos[0].grid(True, alpha=0.3)
+
+    ordenado = historico_com_criterios.sort_values("n_coef")
+    eixos[1].plot(ordenado["n_coef"], ordenado["aic"], ".", c=CORES["aic"], alpha=0.5, label="AIC")
+    eixos[1].plot(ordenado["n_coef"], ordenado["bic"], ".", c=CORES["bic"], alpha=0.5, label="BIC")
+    eixos[1].set_xlabel("número de coeficientes")
+    eixos[1].set_ylabel("critério (menor = melhor)")
+    eixos[1].set_title("AIC / BIC × complexidade")
+    eixos[1].legend()
+    eixos[1].grid(True, alpha=0.3)
+
+    plt.tight_layout()
+    figura.savefig(destino, dpi=150, bbox_inches="tight")
+    plt.close(figura)
+
+
+# ---------------------------------------------------------------------------
+#  Montagem do relatório
+# ---------------------------------------------------------------------------
+def gerar(pasta_output="output", pasta_relatorios="relatorios"):
+    pasta_output = Path(pasta_output)
+
+    rodadas_para_relatar = []
+    for pasta_modelo in sorted(pasta_output.iterdir()):
+        if not pasta_modelo.is_dir():
+            continue
+        pastas_de_rodada = sorted(p for p in pasta_modelo.glob("run*") if p.is_dir())
+        if pastas_de_rodada:
+            rodadas_para_relatar.append(pastas_de_rodada[-1])  # a última rodada de cada modelo
+
+    if not rodadas_para_relatar:
+        print("Nenhuma rodada encontrada em", pasta_output)
+        return None
+
+    destino = criar_diretorio_rodada(pasta_relatorios)
+
+    linhas = [
+        "# Relatório de Caracterização de PA",
+        "",
+        f"*Gerado em {pd.Timestamp.now():%Y-%m-%d %H:%M}*  ·  fonte: `{pasta_output}/`",
+        "",
+        "## 1. Comparação entre modelos",
+        "",
+        "| Modelo | nº coef | RMSE | NMSE (dB) | EVM (%) | Ganho (dB) | Veredito EVM |",
+        "|---|---:|---:|---:|---:|---:|---|",
+    ]
+
+    dados_por_modelo = []
+    for pasta_rodada in rodadas_para_relatar:
+        rodada = carregar_rodada(pasta_rodada)
+        metricas = calcular_metricas(rodada["entrada"], rodada["saida_medida"], rodada["saida_predita"])
+        vereditos = classificar(metricas)
+        rodada["metricas"] = metricas
+        rodada["vereditos"] = vereditos
+        dados_por_modelo.append(rodada)
+
+        linhas.append(
+            f"| {rodada['nome_modelo']} | {rodada['n_coeficientes']} | "
+            f"{metricas['rmse']:.4f} | {metricas['nmse_dB']:.2f} | {metricas['evm_pct']:.3f} | "
+            f"{metricas['ganho_dB']:.2f} | {vereditos['evm']} |"
+        )
+
+    melhor = min(dados_por_modelo, key=lambda r: r["metricas"]["rmse"])
+    linhas += [
+        "",
+        f"**Melhor por RMSE:** {melhor['nome_modelo']} "
+        f"(RMSE = {melhor['metricas']['rmse']:.4f}, EVM = {melhor['metricas']['evm_pct']:.3f}%, "
+        f"{melhor['n_coeficientes']} coeficientes).",
+        "",
+    ]
+
+    for rodada in dados_por_modelo:
+        nome = rodada["nome_modelo"]
+        metricas = rodada["metricas"]
+        vereditos = rodada["vereditos"]
+
+        gerar_painel_modelo(rodada, destino / f"{nome}_painel.png")
+
+        n_amostras_simulacao = len(rodada["saida_medida"])
+        escolhas, historico_com_criterios = calcular_selecoes(rodada["historico"], n_amostras_simulacao)
+        gerar_painel_fronteira(rodada["historico"], escolhas, historico_com_criterios,
+                               destino / f"{nome}_fronteira.png", nome)
+
+        linhas += [
+            f"## Modelo: {nome}",
+            "",
+            f"- **Hiperparâmetros:** `{rodada['hiperparametros']}`",
+            f"- **Amostras (teste):** {metricas['n_amostras']:,}  ·  "
+            f"**PAPR da entrada:** {metricas['papr_dB']:.2f} dB",
+            "",
+            "### Métricas (padrão TELECOM)",
+            "",
+            "| Métrica | Valor | Veredito |",
+            "|---|---:|---|",
+            f"| RMSE | {metricas['rmse']:.5f} | — |",
+            f"| NMSE | {metricas['nmse_dB']:.2f} dB | {vereditos['nmse']} |",
+            f"| EVM | {metricas['evm_pct']:.3f} % | {vereditos['evm']} |",
+            f"| Ganho médio | {metricas['ganho_dB']:.2f} dB | — |",
+            f"| Planicidade de ganho (σ) | {metricas['planicidade_ganho']:.3f} dB | {vereditos['ganho']} |",
+            f"| Planicidade de fase (σ) | {metricas['planicidade_fase']:.3f} ° | {vereditos['fase']} |",
+            "",
+            "### Seleção de modelo (histórico do GridSearch)",
+            "",
+            f"O GridSearch avaliou **{len(rodada['historico'])}** combinações. Escolha por critério:",
+            "",
+            "| Critério | nº coef | RMSE |",
+            "|---|---:|---:|",
+        ]
+        for criterio in ["RMSE", "AIC", "BIC"]:
+            escolha = escolhas[criterio]
+            linhas.append(f"| {criterio} | {int(escolha['n_coef'])} | {escolha['score']:.4f} |")
+
+        if "N" not in rodada["historico"].columns:
+            linhas.append("")
+            linhas.append(f"> Observação: `gridsearch.csv` sem coluna `N`; AIC/BIC usaram "
+                          f"N = {n_amostras_simulacao} (tamanho da simulação) para todas as combinações.")
+
+        linhas += [
+            "",
+            f"![fronteira]({nome}_fronteira.png)",
+            "",
+            "### Equação do modelo (12 termos dominantes)",
+            "",
+            "```",
+            montar_equacao(rodada["nomes_termos"], rodada["coeficientes_reais"], rodada["coeficientes_imag"]),
+            "```",
+            "",
+            f"![painel]({nome}_painel.png)",
+            "",
+        ]
+
+    (destino / "relatorio.md").write_text("\n".join(linhas), encoding="utf-8")
+    print("Relatório gerado em:", destino)
+    return destino
+
 
 if __name__ == "__main__":
-    gerar(sys.argv[1] if len(sys.argv) > 1 else "output")
+    pasta = sys.argv[1] if len(sys.argv) > 1 else "output"
+    gerar(pasta)
