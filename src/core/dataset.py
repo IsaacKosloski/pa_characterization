@@ -6,10 +6,6 @@ class Dataset:
     def __init__(self, x, y):
         self.x = x
         self.y = y
-        self.x_real = self.x.real
-        self.x_imag = self.x.imag
-        self.y_real = self.y.real
-        self.y_imag = self.y.imag
 
     @classmethod
     def from_csv(cls, csv_path):
