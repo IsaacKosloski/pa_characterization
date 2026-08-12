@@ -112,7 +112,8 @@ def grid_search_lstm(train, val, scaler, params, device,save_path):
     for i, (ws, hs, nl, lr, dr, bs, n_epochs) in enumerate(params_combination):
         # Cria o modelo LSTM com os hiperparâmetros atuais
         model = PaLSTM(input_size=4, hidden_size=hs, num_layers=nl, dropout=dr).to(device)
-
+        model.to(torch.float64)
+        
         # Configurando Sliding Window Dataset para treino e validação
         slw_train = SlidingWindowDataset(train, ws)
         slw_val = SlidingWindowDataset(val, ws)
