@@ -113,7 +113,7 @@ def grid_search_lstm(train, val, scaler, params, device,save_path):
         # Cria o modelo LSTM com os hiperparâmetros atuais
         model = PaLSTM(input_size=4, hidden_size=hs, num_layers=nl, dropout=dr).to(device)
         model.to(torch.float64)
-        
+
         # Configurando Sliding Window Dataset para treino e validação
         slw_train = SlidingWindowDataset(train, ws)
         slw_val = SlidingWindowDataset(val, ws)
@@ -175,7 +175,7 @@ def grid_search_lstm(train, val, scaler, params, device,save_path):
 
 def main():
     # Carrega os dados do CSV
-    dataset = Dataset.from_csv("data/dadosIniciais.csv")
+    dataset = Dataset.from_csv("data/raw/dadosIniciais.csv")
 
     # Configurando caminhos para salvar os arquivos
     results_path = Path('./results')
