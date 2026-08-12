@@ -125,15 +125,15 @@ def grid_search_lstm(train, val, scaler, params, device,save_path):
         criterion = nn.MSELoss()
         optimizer = optim.Adam(model.parameters(), lr=lr)
 
-        print(f"Combination ({i}/{n_combinations}): WS = {ws}, HS = {hs}, NL = {nl}, LR = {lr}, DR = {dr}, BS = {bs}, EPOCHS = {n_epochs}")
+        print(f"Combination ({i+1}/{n_combinations}): WS = {ws}, HS = {hs}, NL = {nl}, LR = {lr}, DR = {dr}, BS = {bs}, EPOCHS = {n_epochs}\n")
         for epoch in range(n_epochs):
             train_avg_loss, train_rmse, train_evm = fit(model, train_loader, criterion, optimizer, device, scaler)
             val_avg_loss, val_rmse, val_evm = evaluate(model, val_loader, criterion, device, scaler)
 
             if (epoch+1)%(n_epochs//10) == 0:
-                print(f"\t({epoch+1}/n_epochs):")
+                print(f"\t({epoch+1}/{n_epochs}):")
                 print(f"\t\ttrain | rmse: {train_rmse:.6f}, evm: {train_evm:.6f}, avg_loss: {train_avg_loss:.6f}")
-                print(f"\t\tval   | rmse: {val_rmse:.6f}, evm: {val_evm:.6f}, avg_loss: {val_avg_loss:.6f}")
+                print(f"\t\tval   | rmse: {val_rmse:.6f}, evm: {val_evm:.6f}, avg_loss: {val_avg_loss:.6f}\n")
 
             best_metrics["rmse"], best_model["rmse"], changed = update_best_model(
                 val_rmse, best_metrics["rmse"], model, best_model["rmse"], comp
