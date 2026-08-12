@@ -149,7 +149,7 @@ def grid_search_lstm(train, val, scaler, params, device,save_path):
                 best_params["evm"] = update_params(ws, hs, nl, lr, dr, bs, n_epochs)
                 torch.save(best_model["evm"], save_path/"models/evm.pth")
 
-            best_metrics["avg_loss"], best_model["avg_loss"] = update_best_model(
+            best_metrics["avg_loss"], best_model["avg_loss"], changed = update_best_model(
                 val_avg_loss, best_metrics["avg_loss"], model, best_model["avg_loss"], comp
             )
             if changed:
