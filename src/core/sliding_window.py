@@ -15,15 +15,15 @@ class SlidingWindowDataset(Dataset):
         end_index = start_index + self.window_size
 
         x = torch.stack([
-            self.data.x.real[start_index:end_index],
-            self.data.x.imag[start_index:end_index],
-            self.data.y.real[start_index:end_index],
-            self.data.y.imag[start_index:end_index]
+            torch.tensor(self.data.x.real[start_index:end_index]),
+            torch.tensor(self.data.y.real[start_index:end_index]),
+            torch.tensor(self.data.x.imag[start_index:end_index]),
+            torch.tensor(self.data.y.imag[start_index:end_index])
         ], dim=1)
 
         y = torch.stack([
-            self.data.y.real[end_index:end_index+self.target_dim],
-            self.data.y.imag[end_index:end_index+self.target_dim]
+            torch.tensor(self.data.y.real[end_index:end_index+self.target_dim]),
+            torch.tensor(self.data.y.imag[end_index:end_index+self.target_dim])
         ], dim=1).squeeze(0)
 
         return x,y
