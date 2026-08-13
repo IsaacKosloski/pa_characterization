@@ -4,6 +4,7 @@ from src.core.dataset import Dataset
 from src.core.estimators import Ridge
 from src.metrics.metrics import RMSE, EVM
 from src.search.grid_search import GridSearch
+from src.search.parallel_grid_search import ParallelGridSearch, RandomizedGridSearch
 from src.experiments.experiment_run import ExperimentRun
 from src.engine.simulator import Simulator
 from src.viz.plots import Plotter
@@ -19,21 +20,19 @@ def build_models_grid(max_mem=8, max_deg=4, max_depth=3, min_lam_exp=-6, max_lam
     LAMS = [partial(Ridge, lam=10 ** i) for i in range(min_lam_exp, max_lam_exp + 1)]
 
     MODELS = [
-        ("MemoryPolynomial", MemoryPolynomial, {
-            "memory": list(range(1, max_mem + 1)),
-            "r_deg": list(range(1, max_deg + 1)),
-            "i_deg": list(range(1, max_deg + 1)),
-        }),
-        ("GMP", GeneralizedMemoryPolynomial, {
-            # Modelos como GMP e Volterra escalam o número de parâmetros muito rápido,
-            # então podemos limitar a memória deles pela metade do máximo, se desejar.
-            "memory": list(range(1, (max_mem // 2) + 1)),
-            "r_deg": list(range(1, max_deg + 1)),
-            "i_deg": list(range(1, max_deg + 1)),
-            "lag_depth": list(range(1, max_depth + 1)),
-            "lead_depth": list(range(1, max_depth + 1)),
-            "estimator_factory": LAMS,
-        }),
+        #("MemoryPolynomial", MemoryPolynomial, {
+        #    "memory": list(range(1, max_mem + 1)),
+        #    "r_deg": list(range(1, max_deg + 1)),
+        #    "i_deg": list(range(1, max_deg + 1)),
+        #}),
+        #("GMP", GeneralizedMemoryPolynomial, {
+        #    "memory": list(range(1, (max_mem // 2) + 1)),
+        #    "r_deg": list(range(1, max_deg + 1)),
+        #    "i_deg": list(range(1, max_deg + 1)),
+        #    "lag_depth": list(range(1, max_depth + 1)),
+        #    "lead_depth": list(range(1, max_depth + 1)),
+        #    "estimator_factory": LAMS,
+        #}),
         ("Volterra", Volterra, {
             "memory": list(range(1, (max_mem // 2) + 1)),
             "order_r": list(range(1, max_deg + 1)),
@@ -45,7 +44,8 @@ def build_models_grid(max_mem=8, max_deg=4, max_depth=3, min_lam_exp=-6, max_lam
     return MODELS
 
 def rodar_modelo(nome, cls, grid, train, val, test):
-    gs = GridSearch(cls, grid, RMSE())
+    #gs = GridSearch(cls, grid, RMSE())
+    gs = RandomizedGridSearch(cls, grid, RMSE(), n_iter=100, n_jobs=8, seed=0)
     gs.run(train, val)
     best = gs.best_by(SELECTOR)
     model = best["model"]

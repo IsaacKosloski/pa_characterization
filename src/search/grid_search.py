@@ -1,5 +1,10 @@
+import os
 import itertools
 import numpy as np
+
+
+for variavel in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
+    os.environ.setdefault(variavel, "1")
 
 class GridSearch():
 
@@ -46,3 +51,4 @@ class GridSearch():
 
     def best_by(self, criterion):
         return min(self.trials, key=lambda t: criterion(t["score"], t["n_coef"], t["N"]))
+
