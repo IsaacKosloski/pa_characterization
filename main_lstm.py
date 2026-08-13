@@ -193,10 +193,10 @@ def main():
         "windows_size": [10, 20, 30],
         "hidden_size": [32, 64, 128],
         "num_layers": [1, 2, 3, 4, 5],
-        "learning_rate": [0.0005, 0.001],
-        "dropout": [0.0, 0.25, 0.5],
-        "batch_size": [16, 32, 64],
-        "epoch": [10, 20, 30, 40, 50]
+        "learning_rate": [0.0001],
+        "dropout": [0.0, 0.5],
+        "batch_size": [64, 128],
+        "epoch": [30, 40, 50]
     }
 
     # Definindo device (prioridade para gpu caso haja)
