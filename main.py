@@ -3,8 +3,8 @@ from functools import partial
 from src.core.dataset import Dataset
 from src.core.estimators import Ridge
 from src.metrics.metrics import RMSE, EVM
-from src.search.grid_search import GridSearch
-from src.search.parallel_grid_search import ParallelGridSearch, RandomizedGridSearch
+from src.search.grid_search import GridSearch, RandomizedGridSearch as srgs
+from src.search.parallel_grid_search import ParallelGridSearch, RandomizedGridSearch as prgs
 from src.experiments.experiment_run import ExperimentRun
 from src.engine.simulator import Simulator
 from src.viz.plots import Plotter
@@ -45,7 +45,7 @@ def build_models_grid(max_mem=8, max_deg=4, max_depth=3, min_lam_exp=-6, max_lam
 
 def rodar_modelo(nome, cls, grid, train, val, test):
     #gs = GridSearch(cls, grid, RMSE())
-    gs = RandomizedGridSearch(cls, grid, RMSE(), n_iter=100, n_jobs=8, seed=0)
+    gs = srgs(cls, grid, RMSE(), n_iter=100, seed=0)
     gs.run(train, val)
     best = gs.best_by(SELECTOR)
     model = best["model"]
@@ -83,7 +83,8 @@ def main():
     train, val, test = ds.split()
     print(f"amostras: treino={len(train)}  val={len(val)}  teste={len(test)}\n")
 
-    MODELS_ = build_models_grid(max_mem=10, max_deg=15, max_depth=5)
+    #MODELS_ = build_models_grid(max_mem=10, max_deg=15, max_depth=5)
+    MODELS_ = build_models_grid(max_mem=10, max_deg=10, max_depth=5)
     resultados = [rodar_modelo(n, c, g, train, val, test) for n, c, g in MODELS_]
 
     melhor = min(resultados, key=lambda r: r["rmse_test"])
