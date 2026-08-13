@@ -1,10 +1,5 @@
-import os
 import itertools
-import numpy as np
-
-
-for variavel in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
-    os.environ.setdefault(variavel, "1")
+import random
 
 class GridSearch():
 
@@ -16,39 +11,49 @@ class GridSearch():
 
     def run(self, train_ds, val_ds):
         self.history, self.trials = [], []
-        keys = list(self.param_grid.keys())
-        best = {
-            "score"  : float("inf"),
-            "params" : [],
-            "model"  : None
-        }
-        for combo in itertools.product(*self.param_grid.values()):
-            params = dict(zip(keys, combo))
-            model = self.model_cls(**params).fit(train_ds)
-            score = model.evaluate(val_ds, self.metric)
-            if score < best["score"]:
-                best = {
-                    "score": score,
-                    "params": params,
-                    "model": model
-                }
-            params_ok = {k: (v if isinstance(v, (int, float, str, bool)) else str(v))
-                         for k, v in params.items()}
-            row = {
-                **params_ok,
-                "score": score,
-                "n_coef": len(model.coefficients()["real"])
-            }
+
+        for params in self._generate_combinations():
+
+            assay = self._evaluate_combination(params, train_ds, val_ds)
+            self.trials.append(assay)
+
+            row = {key: (value if isinstance(value, (int, float, str, bool)) else str(value))for key, value in params.items()}
+            row["score"] = assay["score"]
+            row["n_coef"] = assay["n_coef"]
+            row["N"] = assay["N"]
             self.history.append(row)
-            self.trials.append({
-                "score": score,
-                "n_coef": row["n_coef"],
-                "N": len(model.align(val_ds.y)),
-                "params": params,
-                "model": model,
-            })
-        return best
+
+        best_assay = min(self.trials, key=lambda assay: assay["score"])
+        return {
+            "score": best_assay["score"],
+            "params": best_assay["params"],
+            "model": best_assay["model"],
+        }
 
     def best_by(self, criterion):
         return min(self.trials, key=lambda t: criterion(t["score"], t["n_coef"], t["N"]))
 
+    def _generate_combinations(self):
+        keys = list(self.param_grid.keys())
+        return [dict(zip(keys, values))for values in itertools.product(*self.param_grid.values())]
+
+    def _evaluate_combination(self, params, train_ds, val_ds):
+        model = self.model_cls(**params).fit(train_ds)
+        return {
+            "score": model.evaluate(val_ds, self.metric),
+            "n_coef": len(model.coefficients()["real"]),
+            "N": len(model.align(val_ds.y)),
+            "params": params,
+            "model": model,
+        }
+
+class RandomizedGridSearch(GridSearch):
+    def __init__(self, model_cls, param_grid, metric, n_iter=100, seed=None):
+        super().__init__(model_cls, param_grid, metric)
+        self.n_iter = n_iter
+        self.seed = seed
+
+    def _generate_combinations(self):
+        generator = random.Random(self.seed)
+        keys = list(self.param_grid.keys())
+        return [{key: generator.choice(self.param_grid[key]) for key in keys} for _ in range(self.n_iter)]
