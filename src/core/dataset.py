@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-import torch
+from sklearn.preprocessing import StandardScaler
 
 class Dataset:
     def __init__(self, x, y):
@@ -25,6 +25,21 @@ class Dataset:
             Dataset(self.x[i_tr:i_val], self.y[i_tr:i_val]),     # validação = 20% seguintes
             Dataset(self.x[i_val:],     self.y[i_val:]),         # teste     = 20% finais
         )
+
+    def normalize(self, scaler_x=None, scaler_y=None):
+        if scaler_x is not None:
+            x = scaler_x.transform(np.stack([self.x.real, self.x.imag],axis=-1))
+        else:
+            scaler_x = StandardScaler()
+            x = scaler_x.fit_transform(np.stack([self.x.real, self.x.imag],axis=-1))
+
+        if scaler_y is not None:
+            y = scaler_y.transform(np.stack([self.y.real, self.y.imag],axis=-1))
+        else:
+            scaler_y = StandardScaler()
+            y = scaler_y.fit_transform(np.stack([self.y.real, self.y.imag],axis=-1))
+
+        return Dataset(x[:,0] + 1j * x[:,1], y[:,0] + 1j * y[:,1]), scaler_x, scaler_y
 
     def __len__(self):
         return len(self.x)
