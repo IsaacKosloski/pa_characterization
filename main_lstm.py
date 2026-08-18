@@ -195,12 +195,13 @@ def main():
         "num_layers": [1, 2, 3, 4, 5],
         "learning_rate": [0.0001],
         "dropout": [0.0, 0.5],
-        "batch_size": [64, 128],
+        "batch_size": [128, 512, 1024],
         "epoch": [30, 40, 50]
     }
 
     # Definindo device (prioridade para gpu caso haja)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(device)
 
     grid_search_lstm(
         train_normalized,
