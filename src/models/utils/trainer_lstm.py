@@ -3,14 +3,17 @@ import torch.nn as nn
 import torch.optim as optim
 import numpy as np
 from src.metrics.metrics import RMSE, EVM
+from .earlystopping import EarlyStopping
 
 class TrainerLSTM():
-    def __init__(self,model, criterion, lr, scaler, optimizer=None, device=torch.device('cpu')):
+    # Train the LSTM Model (by default uses Adam as optimizer)
+    def __init__(self, model, criterion, lr, scaler, n_epochs, device=torch.device('cpu')):
         self.model = model
         self.criterion = criterion
-        self.optimizer = optim.Adam(model.parameters(), lr=lr) if optimizer is None else optimizer
+        self.optimizer = optim.Adam(model.params(), lr=lr)
         self.device = device
         self.scaler = scaler
+        self.n_epochs = n_epochs
 
     def fit(self,train_loader):
         """Treina o modelo LSTM por uma época."""
