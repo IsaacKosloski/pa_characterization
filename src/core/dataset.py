@@ -27,17 +27,19 @@ class Dataset:
         )
 
     def normalize(self, scaler_x=None, scaler_y=None):
+        x, y = self.x.copy(), self.y.copy()
+
         if scaler_x is not None:
-            x = scaler_x.transform(np.stack([self.x.real, self.x.imag],axis=-1))
+            x = scaler_x.transform(np.stack([x.real, x.imag],axis=-1))
         else:
             scaler_x = StandardScaler()
-            x = scaler_x.fit_transform(np.stack([self.x.real, self.x.imag],axis=-1))
+            x = scaler_x.fit_transform(np.stack([x.real, x.imag],axis=-1))
 
         if scaler_y is not None:
-            y = scaler_y.transform(np.stack([self.y.real, self.y.imag],axis=-1))
+            y = scaler_y.transform(np.stack([y.real, y.imag],axis=-1))
         else:
             scaler_y = StandardScaler()
-            y = scaler_y.fit_transform(np.stack([self.y.real, self.y.imag],axis=-1))
+            y = scaler_y.fit_transform(np.stack([y.real, y.imag],axis=-1))
 
         return Dataset(x[:,0] + 1j * x[:,1], y[:,0] + 1j * y[:,1]), scaler_x, scaler_y
 
