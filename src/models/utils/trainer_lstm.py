@@ -30,6 +30,13 @@ class TrainerLSTM():
             train_results = dict(zip(keys, self._fit(train_loader)))
             val_results = dict(zip(keys, self.evaluate(val_loader)))
 
+            history["train_avg_loss"].append(train_results["avg_loss"])
+            history["train_rmse"].append(train_results["rmse"])
+            history["train_evm"].append(train_results["evm"])
+            history["val_avg_loss"].append(val_results["avg_loss"])
+            history["val_rmse"].append(val_results["rmse"])
+            history["val_evm"].append(val_results["evm"])
+
             if self.verbose and (epoch+1)%5==0:
                 print(f"Epoch: {epoch+1}/50")
                 for (name,d) in (("train",train_results),("val",val_results)):
