@@ -27,6 +27,7 @@ class Dataset:
         )
 
     def normalize(self, scaler_x=None, scaler_y=None):
+        scaler_x, scaler_y = StandardScaler(), StandardScaler()
         x, y = self.x.copy(), self.y.copy()
 
         if scaler_x is not None:
