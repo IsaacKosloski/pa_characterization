@@ -10,7 +10,7 @@ from torch.utils.data import DataLoader
 from itertools import product
 
 def history_to_rows(run_id, params, history):
-    n_epocas = len(history["train_loss"])
+    n_epocas = len(history["train_avg_loss"])
     return [
         {"run_id": run_id, **params, "epoch": e,
          **{nome: float(curva[e]) for nome, curva in history.items()}}
