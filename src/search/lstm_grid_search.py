@@ -46,7 +46,7 @@ class GridSearchLSTM():
             print(f"Combination ({run_id+1}/{n_combinations}): WS = {ws}, HS = {hs}, NL = {nl}, LR = {lr}, DR = {dr}, BS = {bs}\n")
 
             # Configurando classe para treinar lstm
-            trainer = TrainerLSTM(model,nn.MSELoss(),lr,self.scaler_y,device=self.device)
+            trainer = TrainerLSTM(model, nn.MSELoss(), lr, self.scaler_y, device=self.device, verbose=True)
 
             # Treinando modelo e coletando valores
             metric, model, history = trainer.fit(train_loader, val_loader)
