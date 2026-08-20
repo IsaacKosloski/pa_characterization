@@ -48,7 +48,7 @@ class TrainerLSTM():
         return self.early_stopping.best_metric, self.early_stopping.best_model, history
 
 
-    def _fit(self,train_loader):
+    def _fit(self, train_loader):
         """ Treina o modelo LSTM por uma época """
         self.model.train()
         y_pred, y_true = [], []
@@ -75,7 +75,7 @@ class TrainerLSTM():
         evm = self.evm.compute(y_true, y_pred)
         return avg_loss, rmse, evm
 
-    def evaluate(self,val_loader):
+    def evaluate(self, val_loader):
         """Avalia o modelo LSTM no conjunto de validação."""
         self.model.eval()
         y_pred, y_true = [], []

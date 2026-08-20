@@ -22,7 +22,7 @@ class GridSearchLSTM():
         self.train = train
         self.val = val
         self.train_norm, self.scaler_x, self.scaler_y = train.normalize()
-        self.val_norm = val.normalize(self.scaler_x, self.scaler_y)
+        self.val_norm, _, _ = val.normalize(self.scaler_x, self.scaler_y)
         self.device = device
         self.grid_combinations = list(product(param_grid["windows_size"],param_grid["hidden_size"],param_grid["num_layers"],param_grid["learning_rate"],param_grid["dropout"],param_grid["batch_size"]))
 
@@ -41,9 +41,6 @@ class GridSearchLSTM():
             # Configurando Dataloader com Sliding Window Dataset para treino e validação
             train_loader = DataLoader(SlidingWindowDataset(self.train_norm, ws), batch_size=bs, shuffle=True)
             val_loader = DataLoader(SlidingWindowDataset(self.val_norm, ws), batch_size=bs, shuffle=False)
-
-            print(f"train_loader: {train_loader} samples")
-            print(f"val_loader: {val_loader} samples")
 
             print(f"Combination ({run_id+1}/{n_combinations}): WS = {ws}, HS = {hs}, NL = {nl}, LR = {lr}, DR = {dr}, BS = {bs}\n")
 
