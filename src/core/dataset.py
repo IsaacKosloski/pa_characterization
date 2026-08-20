@@ -27,22 +27,24 @@ class Dataset:
         )
 
     def normalize(self, scaler_x=None, scaler_y=None):
-        scaler_x, scaler_y = StandardScaler(), StandardScaler()
         x, y = self.x.copy(), self.y.copy()
 
+        x_stacked = np.stack([x.real, x.imag], axis=-1)
+        y_stacked = np.stack([y.real, y.imag], axis=-1)
+
         if scaler_x is not None:
-            x = scaler_x.transform(np.stack([x.real, x.imag],axis=-1))
+            x = scaler_x.transform(x_stacked)
         else:
             scaler_x = StandardScaler()
-            x = scaler_x.fit_transform(np.stack([x.real, x.imag],axis=-1))
+            x = scaler_x.fit_transform(x_stacked)
 
         if scaler_y is not None:
-            y = scaler_y.transform(np.stack([y.real, y.imag],axis=-1))
+            y = scaler_y.transform(y_stacked)
         else:
             scaler_y = StandardScaler()
-            y = scaler_y.fit_transform(np.stack([y.real, y.imag],axis=-1))
+            y = scaler_y.fit_transform(y_stacked)
 
-        return Dataset(x[:,0] + 1j * x[:,1], y[:,0] + 1j * y[:,1]), scaler_x, scaler_y
+        return Dataset(x[:, 0] + 1j * x[:, 1], y[:, 0] + 1j * y[:, 1]), scaler_x, scaler_y
 
     def __len__(self):
         return len(self.x)
