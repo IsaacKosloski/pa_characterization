@@ -24,7 +24,7 @@ class GridSearchLSTM():
         self.train_norm, self.scaler_x, self.scaler_y = train.normalize()
         self.val_norm = val.normalize(self.scaler_x, self.scaler_y)
         self.device = device
-        self.grid_combinations = list(product(param_grid["windows_size"],param_grid["hidden_size"],param_grid["num_layers"],param_grid["learning_rate"],param_grid["dropout"],param_grid["batch_size"],param_grid["epoch"]))
+        self.grid_combinations = list(product(param_grid["windows_size"],param_grid["hidden_size"],param_grid["num_layers"],param_grid["learning_rate"],param_grid["dropout"],param_grid["batch_size"]))
 
     def run(self, save_path):
         # Executa o grid search sobre os hiperparâmetros e salva os resultados dos melhores modelos em arquivos
