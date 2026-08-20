@@ -31,7 +31,7 @@ class TrainerLSTM():
             val_results = dict(zip(keys, self.evaluate(val_loader)))
 
             if self.verbose and (epoch+1)==5:
-                print(f"Epoch: {epoch}/50")
+                print(f"Epoch: {epoch+1}/50")
                 for (name,d) in (("train",train_results),("val",val_results)):
                     print(f"{name}:")
                     for k,v in d.items():

@@ -17,7 +17,7 @@ def main():
 
     # Definindo device (prioridade para gpu caso haja)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(device)
+    print("device: ", device)
 
     # Parametros do gridsearch
     param_grid = {
