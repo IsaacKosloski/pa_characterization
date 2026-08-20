@@ -21,11 +21,10 @@ class GridSearchLSTM():
     def __init__(self, train, val, param_grid, device):
         self.train = train
         self.val = val
-        self.param_grid_combinations = param_grid
         self.train_norm, self.scaler_x, self.scaler_y = train.normalize()
         self.val_norm = val.normalize(self.scaler_x, self.scaler_y)
         self.device = device
-        self.grid_combinations = list(product(param_grid["windows_size"],self.param_grid["hidden_size"],self.param_grid["num_layers"],self.param_grid["learning_rate"],self.param_grid["dropout"],self.param_grid["batch_size"],self.param_grid["epoch"]))
+        self.grid_combinations = list(product(param_grid["windows_size"],param_grid["hidden_size"],param_grid["num_layers"],param_grid["learning_rate"],param_grid["dropout"],param_grid["batch_size"],param_grid["epoch"]))
 
     def run(self, save_path):
         # Executa o grid search sobre os hiperparâmetros e salva os resultados dos melhores modelos em arquivos
