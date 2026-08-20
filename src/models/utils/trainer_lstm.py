@@ -7,7 +7,7 @@ from .earlystopping import EarlyStopping
 
 class TrainerLSTM():
     """ Train the LSTM Model (by default uses Adam as optimizer) """
-    def __init__(self, model, criterion, lr, output_scaler, n_epochs=100, device=torch.device('cpu'), early_stopping=False, patience=5, delta=0, verbose=False):
+    def __init__(self, model, criterion, lr, output_scaler, n_epochs=50, device=torch.device('cpu'), early_stopping=False, patience=5, delta=0, verbose=False):
         self.model = model
         self.criterion = criterion
         self.optimizer = optim.Adam(model.parameters(), lr=lr)
@@ -26,11 +26,12 @@ class TrainerLSTM():
             "val_avg_loss": [], "val_rmse": [], "val_evm": []
         }
 
-        for epoch in self.n_epochs:
+        for epoch in range(self.n_epochs):
             train_results = dict(zip(keys, self._fit(train_loader)))
             val_results = dict(zip(keys, self.evaluate(val_loader)))
 
-            if self.verbose:
+            if self.verbose and (epoch+1)==5:
+                print(f"Epoch: {epoch}/50")
                 for name,d in (("train","val"),(train_results,val_results)):
                     print(f"{name}:")
                     for k,v in d.items():
