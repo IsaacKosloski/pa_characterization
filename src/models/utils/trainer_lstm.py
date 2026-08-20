@@ -10,7 +10,7 @@ class TrainerLSTM():
     def __init__(self, model, criterion, lr, output_scaler, n_epochs=100, device=torch.device('cpu'), early_stopping=False, patience=5, delta=0, verbose=False):
         self.model = model
         self.criterion = criterion
-        self.optimizer = optim.Adam(model.params(), lr=lr)
+        self.optimizer = optim.Adam(model.parameters(), lr=lr)
         self.device = device
         self.scaler = output_scaler
         self.n_epochs = n_epochs
